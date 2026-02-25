@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Path, Query, Body, Depends
 import uvicorn
 from typing import Optional, List, Dict, Annotated
 from sqlalchemy.orm import Session, joinedload
+from sqlalchemy import or_
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Base, User, Project
@@ -66,10 +67,6 @@ async def get_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     return users
 
-from typing import List, Optional
-from fastapi import Query, HTTPException, Depends
-from sqlalchemy import or_
-from sqlalchemy.orm import Session
 
 @app.get("/users/", response_model=List[UserResponse], summary="Поиск пользователей", tags=["USERDB"])
 async def search_users(
