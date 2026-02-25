@@ -12,9 +12,6 @@ from schemas import UserResponse, UserCreate, ProjectCreate, ProjectResponse, Te
 
 app = FastAPI()
 
-# Временные данные (если нужно для тестирования)
-# posts_data: List[Dict] = []
-# users_data: List[Dict] = []
 
 origins = [
     "http://localhost:8080",
@@ -162,12 +159,12 @@ async def update_project(project_id: int, project_update: ProjectCreate, db: Ses
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     
-    # Проверяем, существует ли автор с указанным author_id
+
     author = db.query(User).filter(User.id == project_update.author_id).first()
     if not author:
         raise HTTPException(status_code=404, detail="Author not found")
     
-    # Обновляем поля (полная замена, так как используется PUT)
+
     project.title = project_update.title
     project.body = project_update.body
     project.underbody = project_update.underbody  
