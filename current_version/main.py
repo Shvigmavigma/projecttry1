@@ -46,7 +46,6 @@ def get_db():
 # ---------- USERS ----------
 @app.post("/users/", response_model=UserResponse, summary="Создать юзера", tags=["USERDB"])
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
-    # Не забудьте хешировать пароль перед сохранением!
     db_user = User(
         nickname=user.nickname,
         fullname=user.fullname,
