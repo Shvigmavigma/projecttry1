@@ -1,18 +1,19 @@
-from fastapi import FastAPI, HTTPException, Path, Query, Body, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends
 import uvicorn
-from typing import Optional, List, Dict, Annotated
-from sqlalchemy.orm import Session, joinedload
+from typing import Optional, List
+from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Base, User, Project
 from database import engine, session_local
-from schemas import UserResponse, UserCreate, ProjectCreate, ProjectResponse, TeacherCreate, TeacherResponse
-
-
+from schemas import (
+    UserResponse, UserCreate,
+    ProjectResponse, ProjectCreate, ProjectUpdate,
+    TeacherCreate, TeacherResponse
+)
 
 app = FastAPI()
-
 
 origins = [
     "http://localhost:8080",
@@ -35,9 +36,6 @@ app.add_middleware(
 
 Base.metadata.create_all(bind=engine)
 
-
-
-
 def get_db():
     db = session_local()
     try:
@@ -45,165 +43,175 @@ def get_db():
     finally:
         db.close()
 
-#USERS
-
-@app.post(path="/users/", response_model=UserResponse,  summary="Создать юзера", tags=["USERDB"])
+# ---------- USERS ----------
+@app.post("/users/", response_model=UserResponse, summary="Создать юзера", tags=["USERDB"])
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
+    # Не забудьте хешировать пароль перед сохранением!
     db_user = User(
-    nickname=user.nickname,
-    fullname=user.fullname,
-    class_=user.class_,
-    speciality=user.speciality,
-    email=user.email,
-    project_id=user.project_id,
-    password=user.password 
-)
+        nickname=user.nickname,
+        fullname=user.fullname,
+        class_=user.class_,
+        speciality=user.speciality,
+        email=user.email,
+        password=user.password  # TODO: заменить на hash_password(user.password)
+    )
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
     return db_user
-@app.get(path="/userslist/", response_model=List[UserResponse], summary="список юзеров", tags=["USERDB"])
+
+@app.get("/userslist/", response_model=List[UserResponse], summary="Список юзеров", tags=["USERDB"])
 async def get_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     return users
-
 
 @app.get("/users/", response_model=List[UserResponse], summary="Поиск пользователей", tags=["USERDB"])
 async def search_users(
     q: Optional[str] = Query(None, description="Поисковый запрос (никнейм, имя, email или ID)"),
     db: Session = Depends(get_db)
 ):
-    """
-    Выполняет поиск пользователей по:
-    - никнейму (частичное совпадение, без учёта регистра)
-    - полному имени (частичное совпадение)
-    - email (частичное совпадение)
-    - ID (если запрос является числом, ищет точное совпадение)
-    
-    Если `q` не указан, возвращает всех пользователей.
-    """
     query = db.query(User)
-    
     if q:
-        # Пытаемся преобразовать q в число для поиска по ID
         try:
             user_id = int(q)
             id_filter = (User.id == user_id)
         except ValueError:
-            id_filter = None 
-        
+            id_filter = None
+
         text_filters = [
             User.nickname.ilike(f"%{q}%"),
             User.fullname.ilike(f"%{q}%"),
             User.email.ilike(f"%{q}%")
         ]
-        
+
         if id_filter is not None:
             query = query.filter(or_(id_filter, *text_filters))
         else:
             query = query.filter(or_(*text_filters))
-    
+
     users = query.all()
     return users
 
-@app.delete(path="/users/{user_id}", summary="Удалить пользователя по ID", tags=["USERDB"])
-async def delete_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    db.delete(user)
+@app.delete("/users/", summary="Удалить пользователей (всех или одного)", tags=["USERDB"])
+async def delete_users(
+    user_id: Optional[int] = None,
+    all: bool = False,
+    db: Session = Depends(get_db)
+):
+    if all:
+        count = db.query(User).delete()
+        db.commit()
+        return {"message": f"Удалено пользователей: {count}"}
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(404, "User not found")
+        # ... очистка проектов ...
+        db.delete(user)
+        db.commit()
+        return {"message": f"User {user_id} deleted"}
+    raise HTTPException(400, "Specify user_id or all=true")
+
+# ---------- PROJECTS ----------
+@app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["PROJECTDB"])
+async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
+    # Проверяем, что автор существует
+    author = db.query(User).filter(User.id == project.authors_ids[0]).first()
+    if not author:
+        raise HTTPException(status_code=404, detail=f"Автор с ID {project.authors_ids[0]} не найден")
+    db_project = Project(
+        title=project.title,
+        body=project.body,
+        underbody=project.underbody,
+        authors_ids=[project.authors_ids[0]],   # список с одним ID
+        tasks=project.tasks
+    )
+    db.add(db_project)
     db.commit()
-    return {"message": f"User {user_id} deleted successfully"}
+    db.refresh(db_project)
+    return db_project
 
-#PROJECTS
 
+@app.get("/projects/", response_model=List[ProjectResponse], summary="Список проектов", tags=["PROJECTDB"])
+async def get_projects(db: Session = Depends(get_db)):
+    projects = db.query(Project).all()
+    return projects
 
-@app.post(path="/projects/", response_model=ProjectResponse,  summary="создать проект", tags=["PROJECTDB"])
-async def create_post(post: ProjectCreate, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.id == post.author_id).first()
-    if db_user is None:
-        raise HTTPException(status_code=404, detail='User not found')
-    
-    db_post = Project(
-    title=post.title,
-    body=post.body,
-    underbody=post.underbody,
-    author_id=post.author_id,
-    tasks=post.tasks            
-)
-    db.add(db_post)
-    db.commit()
-    db.refresh(db_post)
-    return db_post
-
-@app.get(path="/projects/", response_model=List[ProjectResponse],  summary="список проектов", tags=["PROJECTDB"])
-async def get_posts(db: Session = Depends(get_db)):
-    posts = db.query(Project).options(joinedload(Project.author)).all()
-    return posts
-
-@app.get(path="/projects/{project_id}", response_model=ProjectResponse,  summary="конкретный проект", tags=["PROJECTDB"])
-async def get_post_by_id(project_id: int, db: Session = Depends(get_db)):
-    post = db.query(Project).options(joinedload(Project.author)).filter(Project.id == project_id).first()
-    if not post:
-        raise HTTPException(status_code=404, detail="Post not found")
-    return post
-
-@app.put(path="/projects/{project_id}", response_model=ProjectResponse,   summary="обновление проекта", tags=["PROJECTDB"])
-async def update_project(project_id: int, project_update: ProjectCreate, db: Session = Depends(get_db)):
-    # Ищем проект по ID
+@app.get("/projects/{project_id}", response_model=ProjectResponse, summary="Конкретный проект", tags=["PROJECTDB"])
+async def get_project_by_id(project_id: int, db: Session = Depends(get_db)):
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+    return project
 
-    author = db.query(User).filter(User.id == project_update.author_id).first()
-    if not author:
-        raise HTTPException(status_code=404, detail="Author not found")
-    
+@app.put("/projects/{project_id}", response_model=ProjectResponse, summary="Обновление проекта", tags=["PROJECTDB"])
+async def update_project(project_id: int, project_update: ProjectUpdate, db: Session = Depends(get_db)):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
 
-    project.title = project_update.title
-    project.body = project_update.body
-    project.underbody = project_update.underbody  
-    project.author_id = project_update.author_id
-    project.tasks = project_update.tasks         
-    
+    # Обновляем основные поля
+    if project_update.title is not None:
+        project.title = project_update.title
+    if project_update.body is not None:
+        project.body = project_update.body
+    if project_update.underbody is not None:
+        project.underbody = project_update.underbody
+    if project_update.tasks is not None:
+        project.tasks = project_update.tasks
+
+    # Добавление нового автора, если передан author_id
+    if project_update.author_id is not None:
+        # Проверяем существование пользователя
+        author = db.query(User).filter(User.id == project_update.author_id).first()
+        if not author:
+            raise HTTPException(status_code=404, detail=f"Автор с ID {project_update.author_id} не найден")
+
+        # Убедимся, что authors_ids — список (на случай, если в базе вдруг NULL)
+        if project.authors_ids is None:
+            project.authors_ids = []
+
+        # Добавляем, если ещё нет
+        if project_update.author_id not in project.authors_ids:
+            x=list(project.authors_ids)
+            x.append(project_update.author_id)
+            project.authors_ids=x
+            print(f"Добавлен автор {project_update.author_id}, теперь список: {project.authors_ids}")
+        else:
+            print(f"Автор {project_update.author_id} уже есть в списке")
+
     db.commit()
     db.refresh(project)
     return project
-
-@app.delete(path="/projects/{project_id}", summary="удалить проект по ID проект", tags=["PROJECTDB"])
-async def delete_project(project_id: int, db: Session = Depends(get_db)):
-    # Ищем проект по ID
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-    
-    db.delete(project)
-    db.commit()
-    return {"message": f"Project {project_id} deleted successfully"}
-
 @app.get("/search", response_model=List[ProjectResponse], summary="Поиск проектов по названию", tags=["PROJECTDB"])
 async def search_projects(
     q: Optional[str] = Query(None, description="Строка для поиска по названию (частичное совпадение)"),
     db: Session = Depends(get_db)
 ):
-    """
-    Выполняет поиск проектов по названию (title) с использованием частичного совпадения без учёта регистра.
-    - Если передан параметр `q`, возвращает список проектов, название которых содержит эту строку.
-    - Если `q` не передан или пустой, возвращает пустой список.
-    - Для каждого проекта подгружается информация об авторе (поле `author`).
-    """
     if not q:
         return []
-    
-    projects = (
-        db.query(Project)
-        .options(joinedload(Project.author))
-        .filter(Project.title.ilike(f"%{q}%"))
-        .all()
-    )
+    projects = db.query(Project).filter(Project.title.ilike(f"%{q}%")).all()
     return projects
+
+@app.delete("/projects/", summary="Удалить проекты (все или один)", tags=["PROJECTDB"])
+async def delete_projects(
+    project_id: Optional[int] = None,
+    all: bool = Query(False, description="Удалить все проекты"),
+    db: Session = Depends(get_db)
+):
+    if all:
+        count = db.query(Project).delete()
+        db.commit()
+        return {"message": f"Удалено проектов: {count}"}
+    elif project_id is not None:
+        project = db.query(Project).filter(Project.id == project_id).first()
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        db.delete(project)
+        db.commit()
+        return {"message": f"Project {project_id} deleted"}
+    else:
+        raise HTTPException(status_code=400, detail="Specify project_id or all=true")
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
