@@ -155,9 +155,17 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
     return db_project
 
 
-@app.get("/projects/", response_model=List[ProjectResponse], summary="Список проектов", tags=["PROJECTDB"])
-async def get_projects(db: Session = Depends(get_db)):
-    projects = db.query(Project).all()
+@app.get("/projects/", response_model=List[ProjectResponse], summary="Список проектов (с фильтром по автору)", tags=["PROJECTDB"])
+async def get_projects(
+    author_id: Optional[int] = Query(None, description="ID автора для фильтрации проектов"),
+    db: Session = Depends(get_db)
+):
+    if author_id is not None:
+        # Загружаем все проекты и фильтруем в Python
+        all_projects = db.query(Project).all()
+        projects = [p for p in all_projects if author_id in (p.authors_ids or [])]
+    else:
+        projects = db.query(Project).all()
     return projects
 
 @app.get("/projects/{project_id}", response_model=ProjectResponse, summary="Конкретный проект", tags=["PROJECTDB"])
