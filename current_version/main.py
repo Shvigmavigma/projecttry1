@@ -119,14 +119,12 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
 
     # Найти все проекты, где user_id есть в списке авторов
-    # Используем фильтрацию в Python для надёжности (подходит для небольших БД)
     all_projects = db.query(Project).all()
     projects_with_user = [p for p in all_projects if user_id in (p.authors_ids or [])]
 
     for project in projects_with_user:
-        # Удаляем user_id из списка
         if user_id in project.authors_ids:
-            # Работаем напрямую со списком, SQLAlchemy заметит изменение
+
             x=list(project.authors_ids)
             x.remove(user_id)
             project.authors_ids=x
@@ -186,18 +184,17 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
     if project_update.tasks is not None:
         project.tasks = project_update.tasks
 
-    # Добавление нового автора, если передан author_id
+
     if project_update.author_id is not None:
-        # Проверяем существование пользователя
+        # Проверка существования пользователя
         author = db.query(User).filter(User.id == project_update.author_id).first()
         if not author:
             raise HTTPException(status_code=404, detail=f"Автор с ID {project_update.author_id} не найден")
 
-        # Убедимся, что authors_ids — список (на случай, если в базе вдруг NULL)
+        # Убедится, что authors_ids — список 
         if project.authors_ids is None:
             project.authors_ids = []
 
-        # Добавляем, если ещё нет
         if project_update.author_id not in project.authors_ids:
             x=list(project.authors_ids)
             x.append(project_update.author_id)

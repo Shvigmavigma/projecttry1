@@ -13,7 +13,7 @@ class User(Base):
     class_ = Column(Float, default=0.0)
     speciality = Column(String, nullable=True)
     email = Column(String, nullable=False, index=True)
-    # project_id полностью удалён
+
 
 class Project(Base):
     __tablename__ = "projects"
