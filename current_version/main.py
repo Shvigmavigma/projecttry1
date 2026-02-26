@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Query, Depends
 import uvicorn
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, text
 from fastapi.middleware.cors import CORSMiddleware
 
 from models import Base, User, Project
@@ -92,25 +92,51 @@ async def search_users(
     users = query.all()
     return users
 
-@app.delete("/users/", summary="Удалить пользователей (всех или одного)", tags=["USERDB"])
-async def delete_users(
-    user_id: Optional[int] = None,
-    all: bool = False,
-    db: Session = Depends(get_db)
-):
-    if all:
-        count = db.query(User).delete()
-        db.commit()
-        return {"message": f"Удалено пользователей: {count}"}
-    if user_id:
-        user = db.query(User).filter(User.id == user_id).first()
-        if not user:
-            raise HTTPException(404, "User not found")
-        # ... очистка проектов ...
-        db.delete(user)
-        db.commit()
-        return {"message": f"User {user_id} deleted"}
-    raise HTTPException(400, "Specify user_id or all=true")
+
+@app.delete("/users/all", summary="Удалить всех пользователей", tags=["USERDB"])
+async def delete_all_users(db: Session = Depends(get_db)):
+    """
+    Удаляет всех пользователей из базы данных.
+    Перед удалением во всех проектах поле authors_ids принудительно устанавливается в пустой массив '[]',
+    чтобы полностью убрать ссылки на удаляемых пользователей.
+    """
+    db.execute(text("UPDATE projects SET authors_ids = '[]'"))
+
+    deleted_count = db.query(User).delete()
+    
+    db.commit()
+    return {
+        "message": f"Удалено пользователей: {deleted_count}",
+        "projects_updated": "всем проектам установлен пустой список авторов"
+    }
+
+
+
+@app.delete("/users/{user_id}", summary="Удалить пользователя по ID", tags=["USERDB"])
+async def delete_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Найти все проекты, где user_id есть в списке авторов
+    # Используем фильтрацию в Python для надёжности (подходит для небольших БД)
+    all_projects = db.query(Project).all()
+    projects_with_user = [p for p in all_projects if user_id in (p.authors_ids or [])]
+
+    for project in projects_with_user:
+        # Удаляем user_id из списка
+        if user_id in project.authors_ids:
+            # Работаем напрямую со списком, SQLAlchemy заметит изменение
+            x=list(project.authors_ids)
+            x.remove(user_id)
+            project.authors_ids=x
+
+
+    # Удалить пользователя
+    db.delete(user)
+    db.commit()
+    return {"message": f"User {user_id} deleted successfully and removed from projects authors"}
+
 
 # ---------- PROJECTS ----------
 @app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["PROJECTDB"])
