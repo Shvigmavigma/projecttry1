@@ -23,8 +23,9 @@ class UserResponse(UserBase):
 class UserCreate(UserBase):
     password: str 
 
-
-
+class LoginRequest(BaseModel):
+    nickname: str
+    password: str
 # ---------- Teacher ----------
 class TeacherBase(UserBase):
     prof: str  

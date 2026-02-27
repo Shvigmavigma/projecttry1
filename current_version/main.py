@@ -4,13 +4,14 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, text
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
 from models import Base, User, Project
 from database import engine, session_local
 from schemas import (
     UserResponse, UserCreate,
     ProjectResponse, ProjectCreate, ProjectUpdate,
-    TeacherCreate, TeacherResponse
+    TeacherCreate, TeacherResponse, LoginRequest
 )
 
 app = FastAPI()
@@ -44,6 +45,15 @@ def get_db():
         db.close()
 
 # ---------- USERS ----------
+
+@app.post("/login", response_model=UserResponse, tags=["USERDB"])
+async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.nickname == credentials.nickname).first()
+    if not user or user.password != credentials.password:
+        raise HTTPException(status_code=401, detail="Неверный никнейм или пароль")
+    return user
+
+
 @app.post("/users/", response_model=UserResponse, summary="Создать юзера", tags=["USERDB"])
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = User(
@@ -161,7 +171,7 @@ async def get_projects(
     db: Session = Depends(get_db)
 ):
     if author_id is not None:
-        # Загружаем все проекты и фильтруем в Python
+        
         all_projects = db.query(Project).all()
         projects = [p for p in all_projects if author_id in (p.authors_ids or [])]
     else:
@@ -244,4 +254,4 @@ async def delete_projects(
         raise HTTPException(status_code=400, detail="Specify project_id or all=true")
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
