@@ -26,6 +26,14 @@ class UserCreate(UserBase):
 class LoginRequest(BaseModel):
     nickname: str
     password: str
+    
+class UserUpdate(BaseModel):
+    fullname: Optional[str] = None
+    email: Optional[EmailStr] = None
+    class_: Optional[float] = Field(None, alias="class") 
+    speciality: Optional[str] = None
+
+    model_config = ConfigDict(populate_by_name=True)
 # ---------- Teacher ----------
 class TeacherBase(UserBase):
     prof: str  
@@ -46,9 +54,9 @@ class ProjectBase(BaseModel):
         default=[],
         json_schema_extra={
             "example": [
-                {"title": "расчёты", "status": "в процессе", "body": "очень важная задача", "timeline": "20.11.2026"},
-                {"title": "разработка интерфейса", "status": "в работе", "body": "создать адаптивный дизайн", "timeline": "01.12.2026"},
-                {"title": "тестирование", "status": "ожидает", "body": "проверить всё", "timeline": "10.12.2026"}
+                {"title": "расчёты", "status": "в процессе", "body": "очень важная задача", "timelinend": "20.11.2026", "timeline":"15.10.2025"},
+                {"title": "разработка интерфейса", "status": "в работе", "body": "создать адаптивный дизайн", "timelinend": "01.12.2026", "timeline":"15.10.2025"},
+                {"title": "тестирование", "status": "ожидает", "body": "проверить всё", "timelinend": "10.12.2026", "timeline":"15.10.2025"}
             ]
         }
     )
@@ -66,4 +74,6 @@ class ProjectUpdate(BaseModel):
     body: Optional[str] = None
     underbody: Optional[str] = None
     tasks: Optional[List[Dict[str, Any]]] = None
+    authors_ids: Optional[List[int]] = Field(None, description="Полный список ID авторов") 
+    # author_id можно оставить для обратной совместимости или удалить
     author_id: Optional[int] = Field(None, description="ID автора для добавления к существующему списку")

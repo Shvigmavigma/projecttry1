@@ -11,7 +11,7 @@ from database import engine, session_local
 from schemas import (
     UserResponse, UserCreate,
     ProjectResponse, ProjectCreate, ProjectUpdate,
-    TeacherCreate, TeacherResponse, LoginRequest
+    TeacherCreate, TeacherResponse, LoginRequest, UserUpdate
 )
 
 app = FastAPI()
@@ -23,6 +23,8 @@ origins = [
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "http://localhost:5174",   
+    "http://127.0.0.1:5174",     
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
@@ -45,6 +47,26 @@ def get_db():
         db.close()
 
 # ---------- USERS ----------
+
+@app.put("/users/{user_id}", response_model=UserResponse, tags=["USERDB"])
+async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    # обновляем поля, если они переданы
+    if user_update.fullname is not None:
+        user.fullname = user_update.fullname
+    if user_update.email is not None:
+        user.email = user_update.email
+    if user_update.class_ is not None:
+        user.class_ = user_update.class_
+    if user_update.speciality is not None:
+        user.speciality = user_update.speciality
+    # (пароль не обновляем для простоты)
+    db.commit()
+    db.refresh(user)
+    return user
+
 
 @app.post("/login", response_model=UserResponse, tags=["USERDB"])
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
@@ -201,24 +223,23 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
     if project_update.tasks is not None:
         project.tasks = project_update.tasks
 
-
-    if project_update.author_id is not None:
-        # Проверка существования пользователя
+    # Обработка авторов
+    if project_update.authors_ids is not None:
+        # Полная замена списка авторов
+        # Проверим, что все ID существуют
+        users = db.query(User).filter(User.id.in_(project_update.authors_ids)).all()
+        if len(users) != len(project_update.authors_ids):
+            raise HTTPException(status_code=404, detail="Один или несколько авторов не найдены")
+        project.authors_ids = project_update.authors_ids
+    elif project_update.author_id is not None:
+        # Добавление одного автора (старая логика)
         author = db.query(User).filter(User.id == project_update.author_id).first()
         if not author:
             raise HTTPException(status_code=404, detail=f"Автор с ID {project_update.author_id} не найден")
-
-        # Убедится, что authors_ids — список 
         if project.authors_ids is None:
             project.authors_ids = []
-
         if project_update.author_id not in project.authors_ids:
-            x=list(project.authors_ids)
-            x.append(project_update.author_id)
-            project.authors_ids=x
-            print(f"Добавлен автор {project_update.author_id}, теперь список: {project.authors_ids}")
-        else:
-            print(f"Автор {project_update.author_id} уже есть в списке")
+            project.authors_ids = list(project.authors_ids) + [project_update.author_id]
 
     db.commit()
     db.refresh(project)
