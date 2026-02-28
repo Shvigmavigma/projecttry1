@@ -11,8 +11,9 @@ export interface Task {
   title: string;
   status: string;
   body: string;
-  timeline?: string;   // теперь может быть undefined
-  timelinend?: string; // теперь может быть undefined
+  timeline?: string;
+  timelinend?: string;
+  progress?: number;
 }
 
 export interface Project {
@@ -29,7 +30,7 @@ export type ProjectCreate = Omit<Project, 'id'>;
 export interface ProjectUpdate {
   title?: string;
   body?: string;
-  underbody: string;
-  tasks: Task[];
+  underbody?: string;
+  tasks?: Task[];
   author_id?: number;
 }

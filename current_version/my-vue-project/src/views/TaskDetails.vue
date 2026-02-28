@@ -4,10 +4,10 @@
       <h1>Детали задачи</h1>
       <div class="header-buttons">
         <router-link :to="`/project/${projectId}/task/${taskIndex}/edit`">
-          <button class="edit-task-button" title="Редактировать задачу">✎</button>
+          <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
-        <button class="home-button" @click="goHome" title="На главную">🏠</button>
-        <button class="back-button" @click="goBack" title="Вернуться к проекту">◀ Назад</button>
+        <button class="icon-button home-button" @click="goHome" title="На главную">🏠</button>
+        <button class="icon-button back-button" @click="goBack" title="Вернуться к проекту">◀</button>
       </div>
     </header>
 
@@ -65,16 +65,30 @@
         </div>
       </div>
 
+      <!-- Ползунок прогресса (только для задач в работе) -->
+      <div v-if="task.status === 'в работе'" class="progress-section">
+        <h3>Ручной прогресс</h3>
+        <div class="progress-slider">
+          <span class="progress-value">{{ tempProgress }}%</span>
+          <input
+            type="range"
+            v-model.number="tempProgress"
+            min="0"
+            max="100"
+            step="1"
+          />
+        </div>
+        <!-- Кнопка применения прогресса -->
+        <button class="apply-progress-button" @click="openConfirmDialog">Применить прогресс</button>
+      </div>
+
       <!-- Кнопки действий -->
       <div class="action-buttons">
-        <!-- Для активных задач: кнопка завершения -->
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask" :disabled="actionInProgress">
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
           </button>
         </div>
-
-        <!-- Для выполненных задач: кнопка возобновления и выбор статуса -->
         <div v-else>
           <button
             v-if="!showRenewOptions"
@@ -111,11 +125,23 @@
         <span v-if="isUrgent && !isOverdue && !isInvalid" class="badge urgent">Срочно</span>
       </div>
     </div>
+
+    <!-- Модальное окно подтверждения -->
+    <div v-if="showConfirmDialog" class="modal-overlay" @click.self="closeConfirmDialog">
+      <div class="modal-content">
+        <h3>Подтверждение</h3>
+        <p>Изменить прогресс с {{ progressValue }}% на {{ tempProgress }}%?</p>
+        <div class="modal-actions">
+          <button class="modal-confirm" @click="confirmProgressChange">Да</button>
+          <button class="modal-cancel" @click="closeConfirmDialog">Нет</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import type { Task } from '@/types';
@@ -134,29 +160,17 @@ const error = ref('');
 const actionInProgress = ref(false);
 const showRenewOptions = ref(false);
 
-// Функция проверки формата даты ДД.ММ.ГГГГ
-// Парсинг даты из строки "DD.MM.YYYY"
+const progressValue = ref(0);
+const tempProgress = ref(0);
+const showConfirmDialog = ref(false);
+
 function parseDate(dateStr?: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return null;
-  // Явно указываем, что после map получится кортеж из трёх чисел
   const [day, month, year] = parts.map(Number) as [number, number, number];
-  // Дополнительная проверка на NaN (хотя map уже дал числа)
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
   return new Date(year, month - 1, day);
-}
-
-// Функция проверки формата даты ДД.ММ.ГГГГ
-function isValidDateFormat(dateStr?: string): boolean {
-  if (!dateStr) return true; // пустая строка допустима
-  const parts = dateStr.split('.');
-  if (parts.length !== 3) return false;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
-  if (isNaN(day) || isNaN(month) || isNaN(year)) return false;
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1000 || year > 9999) return false;
-  const date = new Date(year, month - 1, day);
-  return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
 function formatTaskDates(task: Task): string {
@@ -167,6 +181,17 @@ function formatTaskDates(task: Task): string {
     if (parts.length === 2) return `${parts[0]} – ${parts[1]}`;
   }
   return task.timeline || '?';
+}
+
+function isValidDateFormat(dateStr?: string): boolean {
+  if (!dateStr) return true;
+  const parts = dateStr.split('.');
+  if (parts.length !== 3) return false;
+  const [day, month, year] = parts.map(Number) as [number, number, number];
+  if (isNaN(day) || isNaN(month) || isNaN(year)) return false;
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1000 || year > 9999) return false;
+  const date = new Date(year, month - 1, day);
+  return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
 onMounted(async () => {
@@ -181,7 +206,10 @@ onMounted(async () => {
     if (!project.value || !project.value.tasks || !project.value.tasks[taskIndex]) {
       error.value = 'Задача не найдена';
     } else {
-      task.value = project.value.tasks[taskIndex];
+      const loadedTask = project.value.tasks[taskIndex];
+      task.value = loadedTask;
+      progressValue.value = loadedTask.progress ?? 0;
+      tempProgress.value = loadedTask.progress ?? 0;
     }
   } catch (err) {
     error.value = 'Ошибка загрузки';
@@ -191,51 +219,60 @@ onMounted(async () => {
   }
 });
 
-// Вычисляемые статусы
+watch(task, (newTask) => {
+  if (newTask) {
+    progressValue.value = newTask.progress ?? 0;
+    tempProgress.value = newTask.progress ?? 0;
+  }
+});
+
+// Вычисляемые свойства
 const isInvalid = computed(() => {
-  if (!task.value) return false;
-  let startStr = task.value.timeline;
-  let endStr = task.value.timelinend;
+  const t = task.value;
+  if (!t) return false;
+  let startStr = t.timeline;
+  let endStr = t.timelinend;
   if (!endStr && startStr && startStr.includes('-')) {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr);
-  const end = parseDate(endStr);
+  const start = parseDate(startStr || '');
+  const end = parseDate(endStr || '');
   const startValid = isValidDateFormat(startStr);
   const endValid = isValidDateFormat(endStr);
-  // Если даты заданы, но формат неверный, считаем задачу некорректной
   if ((startStr && !startValid) || (endStr && !endValid)) return true;
   return !start || !end || start > end;
 });
 
 const isOverdue = computed(() => {
-  if (!task.value || isInvalid.value) return false;
-  let endStr = task.value.timelinend;
-  if (!endStr && task.value.timeline && task.value.timeline.includes('-')) {
-    const parts = task.value.timeline.split('-');
+  const t = task.value;
+  if (!t || isInvalid.value) return false;
+  let endStr = t.timelinend;
+  if (!endStr && t.timeline && t.timeline.includes('-')) {
+    const parts = t.timeline.split('-');
     endStr = parts[1] || '';
   }
-  const end = parseDate(endStr);
+  const end = parseDate(endStr || '');
   if (!end) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  return today > end && task.value.status !== 'выполнена';
+  return today > end && t.status !== 'выполнена';
 });
 
 const isUrgent = computed(() => {
-  if (!task.value || isInvalid.value || isOverdue.value) return false;
-  let startStr = task.value.timeline;
-  let endStr = task.value.timelinend;
+  const t = task.value;
+  if (!t || isInvalid.value || isOverdue.value) return false;
+  let startStr = t.timeline;
+  let endStr = t.timelinend;
   if (!endStr && startStr && startStr.includes('-')) {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr);
-  const end = parseDate(endStr);
-  if (!start || !end) return false; // добавили проверку на null
+  const start = parseDate(startStr || '');
+  const end = parseDate(endStr || '');
+  if (!start || !end) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const totalDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
@@ -243,21 +280,22 @@ const isUrgent = computed(() => {
   const elapsed = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
   if (elapsed < 0) return false;
   const prog = elapsed / totalDuration;
-  return prog > 2 / 3 && task.value.status !== 'выполнена';
+  return prog > 2 / 3 && t.status !== 'выполнена';
 });
 
 const progress = computed(() => {
-  if (!task.value || isInvalid.value) return 0;
-  let startStr = task.value.timeline;
-  let endStr = task.value.timelinend;
+  const t = task.value;
+  if (!t || isInvalid.value) return 0;
+  let startStr = t.timeline;
+  let endStr = t.timelinend;
   if (!endStr && startStr && startStr.includes('-')) {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr);
-  const end = parseDate(endStr);
-  if (!start || !end) return 0; // если даты не определены, прогресс 0
+  const start = parseDate(startStr || '');
+  const end = parseDate(endStr || '');
+  if (!start || !end) return 0;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const totalDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
@@ -282,12 +320,14 @@ const taskStatusClass = computed(() => {
   return '';
 });
 
-// Метод завершения задачи
+// Методы
 const completeTask = async () => {
-  if (!project.value || !task.value || actionInProgress.value) return;
+  const currentProject = project.value;
+  const currentTask = task.value;
+  if (!currentProject || !currentTask || actionInProgress.value) return;
   actionInProgress.value = true;
   try {
-    const updatedTasks = [...project.value.tasks];
+    const updatedTasks = [...currentProject.tasks];
     updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], status: 'выполнена' } as Task;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
     router.push(`/project/${projectId}`);
@@ -299,15 +339,16 @@ const completeTask = async () => {
   }
 };
 
-// Метод обновления статуса (для возобновления)
 const updateTaskStatus = async (newStatus: string) => {
-  if (!project.value || !task.value || actionInProgress.value) return;
+  const currentProject = project.value;
+  const currentTask = task.value;
+  if (!currentProject || !currentTask || actionInProgress.value) return;
   actionInProgress.value = true;
   try {
-    const updatedTasks = [...project.value.tasks];
+    const updatedTasks = [...currentProject.tasks];
     updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], status: newStatus } as Task;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    project.value.tasks = updatedTasks;
+    project.value = { ...currentProject, tasks: updatedTasks };
     task.value = updatedTasks[taskIndex];
     showRenewOptions.value = false;
   } catch (err) {
@@ -318,6 +359,42 @@ const updateTaskStatus = async (newStatus: string) => {
   }
 };
 
+const openConfirmDialog = () => {
+  if (tempProgress.value === progressValue.value) return;
+  showConfirmDialog.value = true;
+};
+
+const closeConfirmDialog = () => {
+  tempProgress.value = progressValue.value;
+  showConfirmDialog.value = false;
+};
+
+const confirmProgressChange = async () => {
+  const currentProject = project.value;
+  const currentTask = task.value;
+  if (!currentProject || !currentTask) {
+    closeConfirmDialog();
+    return;
+  }
+  try {
+    const updatedTasks = [...currentProject.tasks];
+    updatedTasks[taskIndex] = {
+      ...updatedTasks[taskIndex],
+      progress: tempProgress.value
+    } as Task;
+    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
+    project.value = { ...currentProject, tasks: updatedTasks };
+    task.value = updatedTasks[taskIndex];
+    progressValue.value = tempProgress.value;
+  } catch (err) {
+    console.error('Ошибка при обновлении прогресса:', err);
+    alert('Не удалось изменить прогресс');
+    tempProgress.value = progressValue.value;
+  } finally {
+    showConfirmDialog.value = false;
+  }
+};
+
 const goBack = () => {
   router.push(`/project/${projectId}`);
 };
@@ -325,7 +402,6 @@ const goBack = () => {
 const goHome = () => {
   router.push('/main');
 };
-
 </script>
 
 <style scoped>
@@ -334,6 +410,7 @@ const goHome = () => {
   background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
   padding: 20px;
   box-sizing: border-box;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .details-header {
@@ -350,48 +427,48 @@ const goHome = () => {
   color: #1f4f22;
   font-size: 2rem;
   margin: 0;
+  text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
 }
 
 .header-buttons {
   display: flex;
-  gap: 10px;
+  gap: 8px;
 }
 
-.back-button, .home-button {
-  background: none;
+.icon-button {
+  background: white;
   border: none;
-  font-size: 1.2rem;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  font-size: 1.4rem;
   cursor: pointer;
-  padding: 0.5rem 1rem;
-  border-radius: 30px;
-  transition: background 0.2s;
+  box-shadow: 0 4px 8px rgba(0,40,0,0.1);
   display: flex;
   align-items: center;
-  gap: 5px;
-  background: rgba(255,255,255,0.5);
-}
-
-.back-button:hover, .home-button:hover {
-  background: rgba(255,255,255,0.8);
-}
-
-.home-button {
-  font-size: 1.8rem;
-  padding: 0.5rem;
-  border-radius: 50%;
-  width: 50px;
-  height: 50px;
   justify-content: center;
+  transition: all 0.2s ease;
+  color: #2c5e2e;
+}
+
+.icon-button:hover {
+  background: #e8ffe8;
+  transform: scale(1.1);
+  box-shadow: 0 6px 12px rgba(66, 185, 131, 0.2);
 }
 
 .task-card {
   background: white;
-  border-radius: 24px;
-  box-shadow: 0 10px 30px rgba(0, 40, 0, 0.1);
+  border-radius: 32px;
+  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.15);
   padding: 30px;
   max-width: 800px;
   margin: 0 auto;
-  transition: border 0.2s;
+  transition: border 0.2s, transform 0.2s;
+}
+
+.task-card:hover {
+  transform: translateY(-2px);
 }
 
 .task-card.task-overdue {
@@ -404,7 +481,7 @@ const goHome = () => {
 
 .task-card.task-invalid {
   border: 2px solid #9e9e9e;
-  opacity: 0.8;
+  opacity: 0.9;
 }
 
 .task-title {
@@ -423,6 +500,7 @@ const goHome = () => {
   color: #1f4f22;
   margin-bottom: 10px;
   font-weight: 500;
+  font-size: 1.2rem;
 }
 
 .task-section p {
@@ -430,7 +508,6 @@ const goHome = () => {
   line-height: 1.6;
 }
 
-/* Стили для невалидных дат */
 .invalid-date {
   color: #f44336;
   font-weight: 600;
@@ -477,6 +554,7 @@ const goHome = () => {
   background: #42b983;
   border-radius: 15px 0 0 15px;
   width: 0%;
+  transition: width 0.3s ease;
 }
 
 .gantt-dates {
@@ -484,9 +562,10 @@ const goHome = () => {
   right: 10px;
   font-size: 0.85rem;
   color: #3b5e3b;
-  background: rgba(255,255,255,0.7);
-  padding: 2px 6px;
-  border-radius: 10px;
+  background: rgba(255,255,255,0.8);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-weight: 500;
 }
 
 .gantt-labels {
@@ -495,6 +574,90 @@ const goHome = () => {
   color: #3b5e3b;
   font-size: 0.9rem;
   margin-top: 5px;
+}
+
+.progress-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px dashed #c8e6c9;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+}
+
+.progress-section h3 {
+  color: #1f4f22;
+  margin-bottom: 5px;
+  font-weight: 500;
+}
+
+.progress-slider {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+}
+
+.progress-value {
+  font-weight: 600;
+  color: #2c5e2e;
+  min-width: 45px;
+  font-size: 1.2rem;
+}
+
+.progress-slider input[type=range] {
+  flex: 1;
+  height: 8px;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  background: #e0f0e0;
+  border-radius: 4px;
+  outline: none;
+}
+
+.progress-slider input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 24px;
+  height: 24px;
+  background: #42b983;
+  border-radius: 50%;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  transition: transform 0.1s;
+}
+
+.progress-slider input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.15);
+  background: #3aa876;
+}
+
+.progress-slider input[type=range]::-moz-range-thumb {
+  width: 24px;
+  height: 24px;
+  background: #42b983;
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.apply-progress-button {
+  background: #42b983;
+  color: white;
+  border: none;
+  border-radius: 30px;
+  padding: 10px 30px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 4px 8px rgba(66, 185, 131, 0.3);
+}
+
+.apply-progress-button:hover {
+  background: #3aa876;
+  transform: scale(1.02);
 }
 
 .action-buttons {
@@ -512,10 +675,12 @@ const goHome = () => {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
+  box-shadow: 0 4px 8px rgba(66, 185, 131, 0.3);
 }
 
 .complete-button:hover:not(:disabled), .renew-button:hover:not(:disabled) {
   background: #3aa876;
+  transform: scale(1.02);
 }
 
 .complete-button:disabled, .renew-button:disabled {
@@ -537,7 +702,8 @@ const goHome = () => {
   font-size: 1rem;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: all 0.2s;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .status-option.work {
@@ -547,6 +713,7 @@ const goHome = () => {
 
 .status-option.work:hover:not(:disabled) {
   background: #3aa876;
+  transform: scale(1.02);
 }
 
 .status-option.waiting {
@@ -585,6 +752,7 @@ const goHome = () => {
   font-size: 0.9rem;
   font-weight: bold;
   color: white;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 
 .badge.overdue {
@@ -606,23 +774,87 @@ const goHome = () => {
   padding: 40px;
 }
 
-.edit-task-button {
-  background: none;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 30px;
-  transition: background 0.2s;
-  background: rgba(255,255,255,0.5);
-  width: 40px;
-  height: 40px;
+/* Модальное окно */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s;
 }
 
-.edit-task-button:hover {
-  background: rgba(255,255,255,0.8);
+.modal-content {
+  background: white;
+  border-radius: 32px;
+  padding: 30px;
+  max-width: 400px;
+  width: 90%;
+  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.3);
+  animation: slideUp 0.3s;
+}
+
+.modal-content h3 {
+  color: #1f4f22;
+  margin-bottom: 15px;
+  font-weight: 500;
+  font-size: 1.5rem;
+}
+
+.modal-content p {
+  color: #1a3a1a;
+  margin-bottom: 25px;
+  font-size: 1.1rem;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.modal-confirm, .modal-cancel {
+  padding: 10px 25px;
+  border: none;
+  border-radius: 30px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-confirm {
+  background: #42b983;
+  color: white;
+}
+
+.modal-confirm:hover {
+  background: #3aa876;
+  transform: scale(1.02);
+}
+
+.modal-cancel {
+  background: #e8f5e9;
+  color: #2c5e2e;
+}
+
+.modal-cancel:hover {
+  background: #d4eed7;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
 }
 </style>

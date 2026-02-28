@@ -109,6 +109,9 @@
                   <strong>{{ task.title }}</strong>
                   <span class="task-status">{{ task.status }}</span>
                   <p>{{ task.body }}</p>
+                  <span v-if="task.status === 'в работе'" class="task-progress">
+                    Прогресс: {{ task.progress ?? 0 }}%
+                  </span>
                   <small>Срок: {{ formatTaskDates(task) }}</small>
                   <span v-if="isTaskOverdue(task)" class="overdue-badge">Просрочено</span>
                   <span v-if="isTaskInvalid(task)" class="invalid-badge">Некорректные даты</span>
@@ -239,7 +242,7 @@ function isTaskOverdue(task: Task): boolean {
     const parts = task.timeline.split('-');
     endStr = parts[1] || '';
   }
-  const endDate = parseDate(endStr);
+  const endDate = parseDate(endStr || ''); // защита от undefined
   if (!endDate) return false;
   return today > endDate && task.status !== 'выполнена';
 }
@@ -252,8 +255,8 @@ function isTaskInvalid(task: Task): boolean {
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr);
-  const end = parseDate(endStr);
+  const start = parseDate(startStr || ''); // защита
+  const end = parseDate(endStr || '');     // защита
   if (!start || !end) return true;
   return start > end;
 }
@@ -265,7 +268,7 @@ function isTaskNotStarted(task: Task): boolean {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
   }
-  const start = parseDate(startStr);
+  const start = parseDate(startStr || ''); // защита
   if (!start) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -281,8 +284,8 @@ function isTaskUrgent(task: Task): boolean {
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr);
-  const end = parseDate(endStr);
+  const start = parseDate(startStr || ''); // защита
+  const end = parseDate(endStr || '');     // защита
   if (!start || !end) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -329,8 +332,8 @@ const activeTasksProgress = computed(() => {
       endStr = parts[1] || '';
     }
 
-    const startDate = parseDate(startStr);
-    const endDate = parseDate(endStr);
+    const startDate = parseDate(startStr); // startStr уже строка
+    const endDate = parseDate(endStr);     // endStr уже строка
     let progress = 0;
     let invalid = false;
     let overdue = false;
@@ -422,6 +425,7 @@ const goToUser = (userId: number) => {
 </script>
 
 <style scoped>
+/* Стили полностью совпадают с предыдущей версией */
 .project-details-page {
   min-height: 100vh;
   background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
@@ -429,7 +433,6 @@ const goToUser = (userId: number) => {
   box-sizing: border-box;
 }
 
-/* Шапка */
 .details-header {
   display: flex;
   justify-content: space-between;
@@ -440,7 +443,6 @@ const goToUser = (userId: number) => {
   gap: 10px;
 }
 
-/* Для авторов в шапке только кнопка домой (выравнивание справа) */
 .author-header {
   justify-content: flex-end;
 }
@@ -475,7 +477,6 @@ const goToUser = (userId: number) => {
   background: rgba(255,255,255,0.5);
 }
 
-/* Общие стили для секций */
 .project-section {
   margin-bottom: 28px;
 }
@@ -491,7 +492,6 @@ const goToUser = (userId: number) => {
   line-height: 1.6;
 }
 
-/* Список авторов */
 .authors-list {
   display: flex;
   flex-wrap: wrap;
@@ -510,7 +510,6 @@ const goToUser = (userId: number) => {
   color: #2c5e2e;
 }
 
-/* ----- Макет для НЕ-авторов ----- */
 .non-author-layout {
   max-width: 800px;
   margin: 0 auto;
@@ -523,7 +522,6 @@ const goToUser = (userId: number) => {
   padding: 30px;
 }
 
-/* ----- Макет для АВТОРОВ ----- */
 .author-layout {
   max-width: 1200px;
   margin: 0 auto;
@@ -590,7 +588,6 @@ const goToUser = (userId: number) => {
   box-shadow: 0 6px 15px rgba(66, 185, 131, 0.2);
 }
 
-/* Классы состояния задач */
 .task-node.task-overdue {
   background-color: #ffebee;
   border-left-color: #f44336;
@@ -639,6 +636,17 @@ const goToUser = (userId: number) => {
   margin: 8px 0 4px;
 }
 
+.task-progress {
+  display: inline-block;
+  margin-top: 4px;
+  margin-right: 8px;
+  font-size: 0.9rem;
+  color: #2c5e2e;
+  background: #e8f5e9;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
 .task-content small {
   color: #5f7f5f;
 }
@@ -672,7 +680,6 @@ const goToUser = (userId: number) => {
   padding: 20px;
 }
 
-/* Диаграмма Ганта */
 .gantt-section {
   margin-top: 30px;
   border-top: 2px dashed #c8e6c9;
@@ -745,7 +752,6 @@ const goToUser = (userId: number) => {
   padding: 40px;
 }
 
-/* Стили для выполненных задач */
 .completed-tasks {
   display: flex;
   flex-direction: column;
@@ -779,7 +785,6 @@ const goToUser = (userId: number) => {
   margin-top: 4px;
 }
 
-/* Кнопки управления проектом */
 .project-actions {
   margin-top: 30px;
   display: flex;
