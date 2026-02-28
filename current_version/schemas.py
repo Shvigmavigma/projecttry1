@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_serializer
+from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 
 # ---------- User ----------
@@ -75,5 +75,4 @@ class ProjectUpdate(BaseModel):
     underbody: Optional[str] = None
     tasks: Optional[List[Dict[str, Any]]] = None
     authors_ids: Optional[List[int]] = Field(None, description="Полный список ID авторов") 
-    # author_id можно оставить для обратной совместимости или удалить
     author_id: Optional[int] = Field(None, description="ID автора для добавления к существующему списку")
