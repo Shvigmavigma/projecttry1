@@ -53,7 +53,7 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depen
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    # обновляем поля, если они переданы
+
     if user_update.fullname is not None:
         user.fullname = user_update.fullname
     if user_update.email is not None:
@@ -62,7 +62,7 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depen
         user.class_ = user_update.class_
     if user_update.speciality is not None:
         user.speciality = user_update.speciality
-    # (пароль не обновляем для простоты)
+
     db.commit()
     db.refresh(user)
     return user
@@ -84,7 +84,7 @@ async def create_user(user: UserCreate, db: Session = Depends(get_db)):
         class_=user.class_,
         speciality=user.speciality,
         email=user.email,
-        password=user.password  # TODO: заменить на hash_password(user.password)
+        password=user.password  
     )
     db.add(db_user)
     db.commit()
@@ -138,7 +138,6 @@ async def delete_all_users(db: Session = Depends(get_db)):
     db.commit()
     return {
         "message": f"Удалено пользователей: {deleted_count}",
-        "projects_updated": "всем проектам установлен пустой список авторов"
     }
 
 
@@ -148,8 +147,6 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-
-    # Найти все проекты, где user_id есть в списке авторов
     all_projects = db.query(Project).all()
     projects_with_user = [p for p in all_projects if user_id in (p.authors_ids or [])]
 
@@ -160,8 +157,6 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
             x.remove(user_id)
             project.authors_ids=x
 
-
-    # Удалить пользователя
     db.delete(user)
     db.commit()
     return {"message": f"User {user_id} deleted successfully and removed from projects authors"}
@@ -178,7 +173,7 @@ async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
         title=project.title,
         body=project.body,
         underbody=project.underbody,
-        authors_ids=[project.authors_ids[0]],   # список с одним ID
+        authors_ids=[project.authors_ids[0]],   
         tasks=project.tasks
     )
     db.add(db_project)
@@ -213,7 +208,6 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    # Обновляем основные поля
     if project_update.title is not None:
         project.title = project_update.title
     if project_update.body is not None:
@@ -223,16 +217,12 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
     if project_update.tasks is not None:
         project.tasks = project_update.tasks
 
-    # Обработка авторов
     if project_update.authors_ids is not None:
-        # Полная замена списка авторов
-        # Проверим, что все ID существуют
         users = db.query(User).filter(User.id.in_(project_update.authors_ids)).all()
         if len(users) != len(project_update.authors_ids):
             raise HTTPException(status_code=404, detail="Один или несколько авторов не найдены")
         project.authors_ids = project_update.authors_ids
     elif project_update.author_id is not None:
-        # Добавление одного автора (старая логика)
         author = db.query(User).filter(User.id == project_update.author_id).first()
         if not author:
             raise HTTPException(status_code=404, detail=f"Автор с ID {project_update.author_id} не найден")
