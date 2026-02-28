@@ -56,7 +56,6 @@ const projects = ref<Project[]>([]);
 const search = ref('');
 const loading = ref(true);
 
-// Загружаем пользователей при монтировании, если ещё не загружены
 onMounted(async () => {
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
@@ -206,6 +205,9 @@ function goHome() {
   font-size: 1.3rem;
   border-bottom: 1px solid #e0f0e0;
   padding-bottom: 8px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
 .card-description {
@@ -213,6 +215,9 @@ function goHome() {
   line-height: 1.5;
   flex: 1;
   margin-bottom: 16px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
 }
 
 .card-footer {
@@ -223,6 +228,8 @@ function goHome() {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
 }
 
 .authors-label {
@@ -237,6 +244,11 @@ function goHome() {
   cursor: pointer;
   color: #42b983;
   text-decoration: underline;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+  display: inline-block;
+  max-width: 100%;
 }
 
 .author-link:hover {
