@@ -1,7 +1,10 @@
 <template>
   <div class="profile-page">
-    <!-- Кнопка домик в правом верхнем углу -->
-    <button class="home-button" @click="goToMain" title="Главное меню">🏠</button>
+    <!-- Кнопки в правом верхнем углу -->
+    <div class="header-actions">
+      <ThemeToggle />
+      <button class="home-button" @click="goToMain" title="Главное меню">🏠</button>
+    </div>
 
     <div class="profile-card">
       <!-- Заголовок с иконкой -->
@@ -52,6 +55,7 @@
 import { computed } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -79,48 +83,54 @@ const logout = () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   margin: -20px;
   padding: 20px;
   position: relative;
+  transition: background 0.3s;
 }
 
-/* Кнопка домик в правом верхнем углу */
-.home-button {
+/* Контейнер для кнопок в правом верхнем углу */
+.header-actions {
   position: absolute;
   top: 30px;
   right: 30px;
-  background: white;
-  border: none;
+  display: flex;
+  gap: 10px;
+  z-index: 10;
+}
+
+.home-button {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 50%;
-  width: 56px;
-  height: 56px;
+  width: 50px;
+  height: 50px;
   font-size: 28px;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0,40,0,0.15);
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  z-index: 10;
-  color: #2c5e2e;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: #e8ffe8;
+  background: var(--bg-card);
   transform: scale(1.1) translateY(-2px);
-  box-shadow: 0 8px 20px rgba(66, 185, 131, 0.3);
+  box-shadow: var(--shadow-strong);
 }
 
 .profile-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 32px;
-  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.1);
+  box-shadow: var(--shadow-strong);
   padding: 40px;
   width: 100%;
   max-width: 500px;
-  transition: transform 0.2s;
-  overflow: hidden; /* гарантирует, что ничего не вылезет за скруглённые углы */
+  transition: transform 0.2s, background 0.3s;
+  overflow: hidden;
 }
 
 .profile-card:hover {
@@ -136,25 +146,25 @@ const logout = () => {
 
 .avatar {
   font-size: 48px;
-  background: #e8f5e9;
+  background: var(--bg-page);
   width: 80px;
   height: 80px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #2c5e2e;
+  color: var(--heading-color);
 }
 
 .profile-header h2 {
   font-size: 2rem;
-  color: #1f4f22;
+  color: var(--heading-color);
   margin: 0;
   font-weight: 500;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  max-width: calc(100% - 96px); /* чтобы не наезжать на аватар */
+  max-width: calc(100% - 96px);
 }
 
 .profile-info {
@@ -169,36 +179,36 @@ const logout = () => {
   justify-content: space-between;
   align-items: baseline;
   padding-bottom: 10px;
-  border-bottom: 1px solid #e0f0e0;
+  border-bottom: 1px solid var(--border-color);
   overflow-wrap: break-word;
   word-wrap: break-word;
-  gap: 10px; /* добавляем зазор между label и value */
+  gap: 10px;
 }
 
 .info-label {
   font-weight: 600;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 1rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   min-width: 120px;
-  flex-shrink: 0; /* не даём label сжиматься */
+  flex-shrink: 0;
 }
 
 .info-value {
-  color: #1a3a1a;
+  color: var(--text-primary);
   font-size: 1.1rem;
   text-align: right;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  flex: 1; /* занимает оставшееся место, но переносит текст */
-  min-width: 0; /* разрешает переносить */
+  flex: 1;
+  min-width: 0;
 }
 
 .loading {
   text-align: center;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   padding: 20px;
   font-style: italic;
 }
@@ -206,8 +216,8 @@ const logout = () => {
 .edit-button {
   width: 100%;
   padding: 14px;
-  background-color: #42b983;
-  color: white;
+  background-color: var(--accent-color);
+  color: var(--button-text);
   border: none;
   border-radius: 50px;
   font-size: 1.1rem;
@@ -218,7 +228,7 @@ const logout = () => {
 }
 
 .edit-button:hover {
-  background-color: #3aa876;
+  background-color: var(--accent-hover);
 }
 
 .edit-button:active {
@@ -228,8 +238,8 @@ const logout = () => {
 .logout-button {
   width: 100%;
   padding: 14px;
-  background-color: #fee;
-  color: #c44;
+  background-color: var(--danger-bg);
+  color: var(--danger-color);
   border: none;
   border-radius: 50px;
   font-size: 1.1rem;
@@ -240,7 +250,7 @@ const logout = () => {
 }
 
 .logout-button:hover {
-  background-color: #fdd;
+  background-color: var(--danger-hover);
 }
 
 .logout-button:active {

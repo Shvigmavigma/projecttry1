@@ -4,7 +4,6 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, text
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 
 from models import Base, User, Project
 from database import engine, session_local
@@ -70,21 +69,23 @@ async def update_user(user_id: int, user_update: UserUpdate, db: Session = Depen
 
 @app.post("/login", response_model=UserResponse, tags=["USERDB"])
 async def login(credentials: LoginRequest, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.nickname == credentials.nickname).first()
-    if not user or user.password != credentials.password:
-        raise HTTPException(status_code=401, detail="Неверный никнейм или пароль")
+    user = db.query(User).filter(
+        (User.nickname == credentials.nickname.strip()) | (User.email == credentials.nickname.strip())
+    ).first()
+    if not user or user.password != credentials.password.strip():
+        raise HTTPException(status_code=401, detail="Неверный логин или пароль")
     return user
 
 
 @app.post("/users/", response_model=UserResponse, summary="Создать юзера", tags=["USERDB"])
 async def create_user(user: UserCreate, db: Session = Depends(get_db)):
     db_user = User(
-        nickname=user.nickname,
+        nickname=user.nickname.strip(),
         fullname=user.fullname,
         class_=user.class_,
         speciality=user.speciality,
-        email=user.email,
-        password=user.password  
+        email=user.email.strip(),
+        password=user.password.strip()  
     )
     db.add(db_user)
     db.commit()
@@ -165,7 +166,6 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
 # ---------- PROJECTS ----------
 @app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["PROJECTDB"])
 async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
-    # Проверяем, что автор существует
     author = db.query(User).filter(User.id == project.authors_ids[0]).first()
     if not author:
         raise HTTPException(status_code=404, detail=f"Автор с ID {project.authors_ids[0]} не найден")
@@ -263,6 +263,3 @@ async def delete_projects(
         return {"message": f"Project {project_id} deleted"}
     else:
         raise HTTPException(status_code=400, detail="Specify project_id or all=true")
-
-if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

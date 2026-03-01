@@ -2,7 +2,10 @@
   <div class="my-projects-page">
     <header class="page-header">
       <h1>Ваши проекты</h1>
-      <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
     </header>
 
     <div class="action-bar">
@@ -46,6 +49,7 @@ import { ref, onMounted } from 'vue';
 import { useProjectsStore } from '@/stores/projects';
 import { useUsersStore } from '@/stores/users';
 import { useRouter } from 'vue-router';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Project } from '@/types';
 
 const projectsStore = useProjectsStore();
@@ -55,7 +59,6 @@ const projects = ref<Project[]>([]);
 const loading = ref(true);
 
 onMounted(async () => {
-  // Загружаем пользователей, если ещё не загружены
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
@@ -88,9 +91,10 @@ const getAuthorNickname = (id: number): string => {
 <style scoped>
 .my-projects-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
 .page-header {
@@ -102,9 +106,15 @@ const getAuthorNickname = (id: number): string => {
 }
 
 .page-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2.5rem;
   margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -120,10 +130,15 @@ const getAuthorNickname = (id: number): string => {
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .action-bar {
@@ -134,8 +149,8 @@ const getAuthorNickname = (id: number): string => {
 }
 
 .create-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border: none;
   border-radius: 50px;
   padding: 12px 24px;
@@ -143,11 +158,11 @@ const getAuthorNickname = (id: number): string => {
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s, transform 0.1s;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow);
 }
 
 .create-button:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
 }
 
 .create-button:active {
@@ -163,28 +178,28 @@ const getAuthorNickname = (id: number): string => {
 }
 
 .project-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  border: 1px solid #e0f0e0;
+  border: 1px solid var(--border-color);
 }
 
 .project-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 28px rgba(66, 185, 131, 0.2);
-  border-color: #b8e0b8;
+  box-shadow: var(--shadow-strong);
+  border-color: var(--accent-color);
 }
 
 .project-title {
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin-bottom: 12px;
   font-size: 1.3rem;
-  border-bottom: 1px solid #e0f0e0;
+  border-bottom: 1px solid var(--border-color);
   padding-bottom: 8px;
   overflow-wrap: break-word;
   word-wrap: break-word;
@@ -192,7 +207,7 @@ const getAuthorNickname = (id: number): string => {
 }
 
 .project-description {
-  color: #1a3a1a;
+  color: var(--text-primary);
   line-height: 1.5;
   flex: 1;
   margin-bottom: 16px;
@@ -203,10 +218,10 @@ const getAuthorNickname = (id: number): string => {
 }
 
 .project-authors {
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   margin-bottom: 16px;
-  border-top: 1px solid #e0f0e0;
+  border-top: 1px solid var(--border-color);
   padding-top: 12px;
   display: flex;
   flex-wrap: wrap;
@@ -218,6 +233,7 @@ const getAuthorNickname = (id: number): string => {
 .authors-label {
   font-weight: 500;
   margin-right: 4px;
+  color: var(--text-secondary);
 }
 
 .authors-list {
@@ -226,17 +242,22 @@ const getAuthorNickname = (id: number): string => {
 
 .author-link {
   cursor: pointer;
-  color: #42b983;
+  color: var(--link-color);
   text-decoration: underline;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+  display: inline-block;
+  max-width: 100%;
 }
 
 .author-link:hover {
-  color: #2c5e2e;
+  color: var(--link-hover);
 }
 
 .loading, .no-projects {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }

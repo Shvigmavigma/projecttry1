@@ -2,7 +2,10 @@
   <div class="project-edit-page">
     <header class="edit-header">
       <h1>{{ isEdit ? 'Редактирование проекта' : 'Создание нового проекта' }}</h1>
-      <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
     </header>
 
     <div class="edit-card">
@@ -183,6 +186,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Project, Task, User } from '@/types';
 
 const route = useRoute();
@@ -460,9 +464,10 @@ const goBack = () => router.go(-1);
 <style scoped>
 .project-edit-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
 .edit-header {
@@ -474,9 +479,15 @@ const goBack = () => router.go(-1);
 }
 
 .edit-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -492,29 +503,35 @@ const goBack = () => router.go(-1);
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .edit-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 32px;
-  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.1);
+  box-shadow: var(--shadow-strong);
   padding: 40px;
   max-width: 800px;
   margin: 0 auto;
+  transition: background 0.3s;
 }
 
 .form-section {
   margin-bottom: 40px;
   padding-bottom: 20px;
-  border-bottom: 2px dashed #c8e6c9;
+  border-bottom: 2px dashed var(--border-color);
 }
 
 .form-section h2 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 20px;
   font-weight: 500;
 }
@@ -526,35 +543,43 @@ const goBack = () => router.go(-1);
 label {
   display: block;
   margin-bottom: 6px;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 input, select, textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   font-size: 1rem;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
+  background: var(--input-bg);
+  color: var(--text-primary);
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: #42b983;
+  border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
 
+.dark-theme input:focus,
+.dark-theme select:focus,
+.dark-theme textarea:focus {
+  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
+}
+
 input.invalid {
-  border-color: #f44336;
+  border-color: var(--danger-color);
 }
 
 .error-message {
   display: block;
   margin-top: 4px;
-  color: #f44336;
+  color: var(--danger-color);
   font-size: 0.85rem;
 }
 
@@ -584,7 +609,7 @@ textarea {
 
 .authors-label {
   font-weight: 500;
-  color: #3b5e3b;
+  color: var(--text-secondary);
 }
 
 .author-tags {
@@ -594,20 +619,21 @@ textarea {
 }
 
 .author-tag {
-  background: #e8f5e9;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   padding: 6px 12px;
   border-radius: 30px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 0.9rem;
-  color: #2c5e2e;
+  color: var(--text-primary);
 }
 
 .remove-author {
   background: none;
   border: none;
-  color: #c44;
+  color: var(--danger-color);
   font-size: 1.1rem;
   cursor: pointer;
   padding: 0 2px;
@@ -621,7 +647,7 @@ textarea {
 }
 
 .remove-author:hover:not(:disabled) {
-  background: #fee;
+  background: var(--danger-bg);
 }
 
 .remove-author:disabled {
@@ -638,32 +664,33 @@ textarea {
   top: 100%;
   left: 0;
   right: 0;
-  background: white;
-  border: 1px solid #cbd5e0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
   margin-top: 4px;
   max-height: 200px;
   overflow-y: auto;
   z-index: 10;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow);
 }
 
 .search-result-item {
   padding: 10px 16px;
   cursor: pointer;
-  border-bottom: 1px solid #e0f0e0;
+  border-bottom: 1px solid var(--border-color);
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .search-result-item:hover {
-  background: #f0f9f0;
+  background: var(--bg-page);
 }
 
 .search-result-item:last-child {
   border-bottom: none;
 }
 
-/* Остальные стили (задачи, кнопки) остаются без изменений */
+/* Стили для задач */
 .tasks-header {
   display: flex;
   justify-content: space-between;
@@ -672,8 +699,8 @@ textarea {
 }
 
 .add-task-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border: none;
   border-radius: 30px;
   padding: 8px 16px;
@@ -684,15 +711,15 @@ textarea {
 }
 
 .add-task-button:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
 }
 
 .no-tasks {
   text-align: center;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-style: italic;
   padding: 20px;
-  background: #f8fff8;
+  background: var(--bg-page);
   border-radius: 12px;
 }
 
@@ -703,15 +730,15 @@ textarea {
 }
 
 .task-item {
-  border: 1px solid #e0f0e0;
+  border: 1px solid var(--border-color);
   border-radius: 12px;
-  background: white;
+  background: var(--bg-card);
   transition: all 0.2s;
 }
 
 .task-item.expanded {
-  border-color: #42b983;
-  box-shadow: 0 4px 12px rgba(66, 185, 131, 0.15);
+  border-color: var(--accent-color);
+  box-shadow: var(--shadow);
 }
 
 .task-compact {
@@ -724,12 +751,12 @@ textarea {
 }
 
 .task-compact:hover {
-  background: #f8fff8;
+  background: var(--bg-page);
 }
 
 .task-title {
   font-weight: 500;
-  color: #2c5e2e;
+  color: var(--text-primary);
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
@@ -740,7 +767,7 @@ textarea {
   border: none;
   font-size: 1.2rem;
   cursor: pointer;
-  color: #c44;
+  color: var(--danger-color);
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -751,12 +778,12 @@ textarea {
 }
 
 .delete-task-button:hover {
-  background: #fee;
+  background: var(--danger-bg);
 }
 
 .task-form {
   padding: 20px;
-  border-top: 1px solid #e0f0e0;
+  border-top: 1px solid var(--border-color);
 }
 
 .task-form-header {
@@ -767,7 +794,7 @@ textarea {
 }
 
 .task-form-header h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin: 0;
   font-weight: 500;
 }
@@ -777,7 +804,7 @@ textarea {
   border: none;
   font-size: 1.5rem;
   cursor: pointer;
-  color: #5f7f5f;
+  color: var(--text-secondary);
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -788,7 +815,7 @@ textarea {
 }
 
 .close-task-form:hover {
-  background: #e0f0e0;
+  background: var(--bg-page);
 }
 
 .task-form-actions {
@@ -809,21 +836,22 @@ textarea {
 }
 
 .save-task-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
 }
 
 .save-task-button:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
 }
 
 .cancel-task-button {
-  background: #e8f5e9;
-  color: #2c5e2e;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-task-button:hover {
-  background: #d4eed7;
+  background: var(--bg-card);
 }
 
 .form-actions {
@@ -844,12 +872,12 @@ textarea {
 }
 
 .save-button {
-  background-color: #42b983;
-  color: white;
+  background-color: var(--accent-color);
+  color: var(--button-text);
 }
 
 .save-button:hover:not(:disabled) {
-  background-color: #3aa876;
+  background-color: var(--accent-hover);
 }
 
 .save-button:disabled {
@@ -858,17 +886,18 @@ textarea {
 }
 
 .cancel-button {
-  background-color: #e8f5e9;
-  color: #2c5e2e;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-button:hover {
-  background-color: #d4eed7;
+  background-color: var(--bg-card);
 }
 
 .loading, .error {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }

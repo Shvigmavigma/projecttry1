@@ -1,7 +1,15 @@
 <template>
   <div class="profile-edit-page">
-    <div class="edit-card">
-      <h2>Редактирование профиля</h2>
+    <header class="edit-header">
+      <h1>Редактирование профиля</h1>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
+    </header>
+
+    <div v-if="loading" class="loading">Загрузка...</div>
+    <div v-else class="edit-card">
       <form @submit.prevent="handleSave">
         <div class="form-group">
           <label for="fullname">Полное имя</label>
@@ -61,6 +69,7 @@
 import { ref, onMounted } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import axios from 'axios';
 
 const authStore = useAuthStore();
@@ -73,6 +82,7 @@ const form = ref({
   speciality: '',
 });
 
+const loading = ref(true);
 const saving = ref(false);
 const errorMessage = ref('');
 
@@ -85,6 +95,7 @@ onMounted(() => {
       speciality: authStore.user.speciality || '',
     };
   }
+  loading.value = false;
 });
 
 const handleSave = async () => {
@@ -94,11 +105,10 @@ const handleSave = async () => {
   errorMessage.value = '';
 
   try {
-    // Преобразуем поле class (в форме) в class_ для отправки
     const { class: classValue, ...rest } = form.value;
     const updateData = {
       ...rest,
-      class_: classValue, // бэкенд ожидает class_
+      class_: classValue,
     };
 
     const response = await axios.put(
@@ -106,11 +116,9 @@ const handleSave = async () => {
       updateData
     );
 
-    // Обновляем данные пользователя в хранилище и localStorage
     authStore.user = response.data;
     localStorage.setItem('user', JSON.stringify(response.data));
 
-    // Переходим обратно в профиль
     router.push('/profile');
   } catch (error: any) {
     console.error('Error updating profile:', error);
@@ -124,33 +132,72 @@ const handleSave = async () => {
 const goBack = () => {
   router.push('/profile');
 };
+
+const goHome = () => {
+  router.push('/main');
+};
 </script>
 
 <style scoped>
 .profile-edit-page {
-  display: flex;
-  justify-content: center;
-  align-items: center;
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
-  margin: -20px;
+  background: var(--bg-page);
   padding: 20px;
+  box-sizing: border-box;
+  transition: background 0.3s;
+}
+
+.edit-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 500px;
+  margin: 0 auto 20px;
+}
+
+.edit-header h1 {
+  color: var(--heading-color);
+  font-size: 2rem;
+  margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.home-button {
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 50%;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  color: var(--text-primary);
+}
+
+.home-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .edit-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 32px;
-  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.1);
+  box-shadow: var(--shadow);
   padding: 40px;
-  width: 100%;
   max-width: 500px;
-}
-
-h2 {
-  color: #1f4f22;
-  margin-bottom: 28px;
-  text-align: center;
-  font-weight: 500;
+  margin: 0 auto;
+  transition: background 0.3s;
 }
 
 .form-group {
@@ -160,33 +207,40 @@ h2 {
 label {
   display: block;
   margin-bottom: 6px;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 input {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   font-size: 1rem;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   outline: none;
   box-sizing: border-box;
+  background: var(--input-bg);
+  color: var(--text-primary);
 }
 
 input:focus {
-  border-color: #42b983;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
+}
+
+.light-theme input:focus {
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
 
 .error-message {
-  background: #fee;
-  color: #c44;
+  background: var(--error-bg);
+  color: var(--danger-color);
   padding: 10px;
   border-radius: 8px;
   margin-bottom: 20px;
   text-align: center;
+  border: 1px solid var(--danger-color);
 }
 
 .button-group {
@@ -195,8 +249,7 @@ input:focus {
   margin-top: 32px;
 }
 
-.save-button,
-.cancel-button {
+.save-button, .cancel-button {
   flex: 1;
   padding: 14px;
   border: none;
@@ -208,12 +261,12 @@ input:focus {
 }
 
 .save-button {
-  background-color: #42b983;
-  color: white;
+  background-color: var(--accent-color);
+  color: var(--button-text);
 }
 
 .save-button:hover:not(:disabled) {
-  background-color: #3aa876;
+  background-color: var(--accent-hover);
 }
 
 .save-button:disabled {
@@ -222,11 +275,19 @@ input:focus {
 }
 
 .cancel-button {
-  background-color: #e8f5e9;
-  color: #2c5e2e;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-button:hover {
-  background-color: #d4eed7;
+  background-color: var(--bg-card);
+}
+
+.loading {
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  padding: 40px;
 }
 </style>

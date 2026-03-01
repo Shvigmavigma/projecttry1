@@ -1,24 +1,28 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 
 export const useThemeStore = defineStore('theme', () => {
-  // Проверяем сохранённую тему или предпочтения системы
+  // По умолчанию светлая тема (false)
   const savedTheme = localStorage.getItem('theme');
-  const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const initialDark = savedTheme === 'dark' || (savedTheme === null && prefersDark);
+  const isDark = ref(savedTheme === 'dark');
 
-  const isDark = ref(initialDark);
+  // Функция переключения темы
+  function toggleTheme() {
+    isDark.value = !isDark.value;
+  }
 
+  // Установка темы
   function setTheme(dark: boolean) {
     isDark.value = dark;
-    localStorage.setItem('theme', dark ? 'dark' : 'light');
-    applyTheme(dark);
   }
 
-  function toggleTheme() {
-    setTheme(!isDark.value);
-  }
+  // Следим за изменением и сохраняем в localStorage
+  watch(isDark, (newValue) => {
+    localStorage.setItem('theme', newValue ? 'dark' : 'light');
+    applyTheme(newValue);
+  }, { immediate: true });
 
+  // Применяем тему к документу
   function applyTheme(dark: boolean) {
     if (dark) {
       document.documentElement.classList.add('dark-theme');
@@ -28,9 +32,6 @@ export const useThemeStore = defineStore('theme', () => {
       document.documentElement.classList.remove('dark-theme');
     }
   }
-
-  // Инициализация
-  applyTheme(isDark.value);
 
   return { isDark, toggleTheme, setTheme };
 });

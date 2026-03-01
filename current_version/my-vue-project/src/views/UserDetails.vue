@@ -2,7 +2,10 @@
   <div class="user-details-page">
     <header class="details-header">
       <h1>Профиль пользователя</h1>
-      <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
     </header>
 
     <div v-if="loadingUser" class="loading">Загрузка данных пользователя...</div>
@@ -54,6 +57,7 @@
 import { ref, onMounted, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { User, Project } from '@/types';
 
 const route = useRoute();
@@ -149,12 +153,12 @@ const goHome = () => {
 </script>
 
 <style scoped>
-/* стили остаются без изменений */
 .user-details-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
 .details-header {
@@ -166,12 +170,18 @@ const goHome = () => {
 }
 
 .details-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -187,28 +197,34 @@ const goHome = () => {
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .user-info-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 24px;
-  box-shadow: 0 10px 30px rgba(0, 40, 0, 0.1);
+  box-shadow: var(--shadow-strong);
   padding: 30px;
   max-width: 600px;
   margin: 0 auto 40px;
   text-align: center;
   overflow: hidden;
+  transition: background 0.3s;
 }
 
 .user-avatar {
   width: 80px;
   height: 80px;
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -219,7 +235,7 @@ const goHome = () => {
 }
 
 .user-nickname {
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin-bottom: 8px;
   font-size: 1.8rem;
   overflow-wrap: break-word;
@@ -229,7 +245,7 @@ const goHome = () => {
 }
 
 .user-fullname {
-  color: #1a3a1a;
+  color: var(--text-primary);
   font-size: 1.2rem;
   margin-bottom: 8px;
   overflow-wrap: break-word;
@@ -238,7 +254,7 @@ const goHome = () => {
 }
 
 .user-email {
-  color: #5f7f5f;
+  color: var(--text-secondary);
   font-size: 1rem;
   margin-bottom: 8px;
   overflow-wrap: break-word;
@@ -247,7 +263,7 @@ const goHome = () => {
 }
 
 .user-class, .user-speciality {
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 1rem;
   margin-top: 4px;
   overflow-wrap: break-word;
@@ -261,7 +277,7 @@ const goHome = () => {
 }
 
 .projects-section h2 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 1.8rem;
   margin-bottom: 24px;
   text-align: center;
@@ -277,25 +293,25 @@ const goHome = () => {
 }
 
 .project-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   cursor: pointer;
-  border: 1px solid #e0f0e0;
+  border: 1px solid var(--border-color);
   display: flex;
   flex-direction: column;
 }
 
 .project-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 28px rgba(66, 185, 131, 0.2);
-  border-color: #b8e0b8;
+  box-shadow: var(--shadow-strong);
+  border-color: var(--accent-color);
 }
 
 .card-title {
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin-bottom: 10px;
   font-size: 1.2rem;
   overflow-wrap: break-word;
@@ -304,7 +320,7 @@ const goHome = () => {
 }
 
 .card-description {
-  color: #1a3a1a;
+  color: var(--text-primary);
   line-height: 1.5;
   margin-bottom: 12px;
   font-size: 0.95rem;
@@ -315,9 +331,9 @@ const goHome = () => {
 }
 
 .card-footer {
-  border-top: 1px solid #e0f0e0;
+  border-top: 1px solid var(--border-color);
   padding-top: 8px;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   display: flex;
   flex-wrap: wrap;
@@ -330,6 +346,7 @@ const goHome = () => {
   font-weight: 500;
   margin-right: 4px;
   flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 .authors-list {
@@ -344,7 +361,7 @@ const goHome = () => {
 
 .author-link {
   cursor: pointer;
-  color: #42b983;
+  color: var(--link-color);
   text-decoration: underline;
   overflow-wrap: break-word;
   word-wrap: break-word;
@@ -354,12 +371,12 @@ const goHome = () => {
 }
 
 .author-link:hover {
-  color: #2c5e2e;
+  color: var(--link-hover);
 }
 
 .loading, .error, .no-projects {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }

@@ -2,7 +2,8 @@
   <div class="task-details-page">
     <header class="details-header">
       <h1>Детали задачи</h1>
-      <div class="header-buttons">
+      <div class="header-actions">
+        <ThemeToggle />
         <router-link :to="`/project/${projectId}/task/${taskIndex}/edit`">
           <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
@@ -144,6 +145,7 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Task } from '@/types';
 
 const route = useRoute();
@@ -407,10 +409,11 @@ const goHome = () => {
 <style scoped>
 .task-details-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  transition: background 0.3s;
 }
 
 .details-header {
@@ -424,47 +427,52 @@ const goHome = () => {
 }
 
 .details-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+}
+
+.light-theme .details-header h1 {
   text-shadow: 1px 1px 2px rgba(255,255,255,0.5);
 }
 
-.header-buttons {
+.header-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .icon-button {
-  background: white;
-  border: none;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 50%;
   width: 44px;
   height: 44px;
   font-size: 1.4rem;
   cursor: pointer;
-  box-shadow: 0 4px 8px rgba(0,40,0,0.1);
+  box-shadow: var(--shadow);
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
-  color: #2c5e2e;
+  color: var(--text-primary);
 }
 
 .icon-button:hover {
-  background: #e8ffe8;
+  background: var(--bg-card);
   transform: scale(1.1);
-  box-shadow: 0 6px 12px rgba(66, 185, 131, 0.2);
+  box-shadow: var(--shadow-strong);
 }
 
 .task-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 32px;
-  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.15);
+  box-shadow: var(--shadow-strong);
   padding: 30px;
   max-width: 800px;
   margin: 0 auto;
-  transition: border 0.2s, transform 0.2s;
+  transition: border 0.2s, transform 0.2s, background 0.3s;
 }
 
 .task-card:hover {
@@ -485,10 +493,10 @@ const goHome = () => {
 }
 
 .task-title {
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin-bottom: 24px;
   font-size: 2rem;
-  border-bottom: 2px solid #c8e6c9;
+  border-bottom: 2px solid var(--border-color);
   padding-bottom: 10px;
 }
 
@@ -497,14 +505,14 @@ const goHome = () => {
 }
 
 .task-section h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 10px;
   font-weight: 500;
   font-size: 1.2rem;
 }
 
 .task-section p {
-  color: #1a3a1a;
+  color: var(--text-primary);
   line-height: 1.6;
 }
 
@@ -524,11 +532,11 @@ const goHome = () => {
 .gantt-section {
   margin-top: 40px;
   padding-top: 20px;
-  border-top: 2px dashed #c8e6c9;
+  border-top: 2px dashed var(--border-color);
 }
 
 .gantt-section h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 15px;
   font-weight: 500;
   text-align: center;
@@ -541,7 +549,7 @@ const goHome = () => {
 .gantt-bar-container {
   position: relative;
   height: 30px;
-  background: #e0f0e0;
+  background: var(--input-bg);
   border-radius: 15px;
   margin-bottom: 5px;
   display: flex;
@@ -561,17 +569,22 @@ const goHome = () => {
   position: absolute;
   right: 10px;
   font-size: 0.85rem;
-  color: #3b5e3b;
-  background: rgba(255,255,255,0.8);
+  color: var(--text-primary);
+  background: rgba(0,0,0,0.5);
   padding: 2px 8px;
   border-radius: 12px;
   font-weight: 500;
 }
 
+.light-theme .gantt-dates {
+  background: rgba(255,255,255,0.8);
+  color: #1a3a1a;
+}
+
 .gantt-labels {
   display: flex;
   justify-content: space-between;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   margin-top: 5px;
 }
@@ -579,7 +592,7 @@ const goHome = () => {
 .progress-section {
   margin-top: 30px;
   padding-top: 20px;
-  border-top: 2px dashed #c8e6c9;
+  border-top: 2px dashed var(--border-color);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -587,7 +600,7 @@ const goHome = () => {
 }
 
 .progress-section h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 5px;
   font-weight: 500;
 }
@@ -601,7 +614,7 @@ const goHome = () => {
 
 .progress-value {
   font-weight: 600;
-  color: #2c5e2e;
+  color: var(--heading-color);
   min-width: 45px;
   font-size: 1.2rem;
 }
@@ -612,7 +625,7 @@ const goHome = () => {
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  background: #e0f0e0;
+  background: var(--input-bg);
   border-radius: 4px;
   outline: none;
 }
@@ -621,30 +634,30 @@ const goHome = () => {
   -webkit-appearance: none;
   width: 24px;
   height: 24px;
-  background: #42b983;
+  background: var(--accent-color);
   border-radius: 50%;
   cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  box-shadow: 0 2px 6px var(--shadow);
   transition: transform 0.1s;
 }
 
 .progress-slider input[type=range]::-webkit-slider-thumb:hover {
   transform: scale(1.15);
-  background: #3aa876;
+  background: var(--accent-hover);
 }
 
 .progress-slider input[type=range]::-moz-range-thumb {
   width: 24px;
   height: 24px;
-  background: #42b983;
+  background: var(--accent-color);
   border-radius: 50%;
   cursor: pointer;
   border: none;
 }
 
 .apply-progress-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border: none;
   border-radius: 30px;
   padding: 10px 30px;
@@ -652,11 +665,11 @@ const goHome = () => {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
-  box-shadow: 0 4px 8px rgba(66, 185, 131, 0.3);
+  box-shadow: var(--shadow);
 }
 
 .apply-progress-button:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
   transform: scale(1.02);
 }
 
@@ -666,8 +679,8 @@ const goHome = () => {
 }
 
 .complete-button, .renew-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border: none;
   border-radius: 30px;
   padding: 12px 30px;
@@ -675,11 +688,11 @@ const goHome = () => {
   font-weight: 600;
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
-  box-shadow: 0 4px 8px rgba(66, 185, 131, 0.3);
+  box-shadow: var(--shadow);
 }
 
 .complete-button:hover:not(:disabled), .renew-button:hover:not(:disabled) {
-  background: #3aa876;
+  background: var(--accent-hover);
   transform: scale(1.02);
 }
 
@@ -703,16 +716,16 @@ const goHome = () => {
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow);
 }
 
 .status-option.work {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
 }
 
 .status-option.work:hover:not(:disabled) {
-  background: #3aa876;
+  background: var(--accent-hover);
   transform: scale(1.02);
 }
 
@@ -726,12 +739,13 @@ const goHome = () => {
 }
 
 .status-option.cancel {
-  background: #e0e0e0;
-  color: #333;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .status-option.cancel:hover:not(:disabled) {
-  background: #bdbdbd;
+  background: var(--bg-page);
 }
 
 .status-option:disabled {
@@ -752,7 +766,7 @@ const goHome = () => {
   font-size: 0.9rem;
   font-weight: bold;
   color: white;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow);
 }
 
 .badge.overdue {
@@ -769,7 +783,7 @@ const goHome = () => {
 
 .loading, .error {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }
@@ -781,7 +795,7 @@ const goHome = () => {
   left: 0;
   width: 100%;
   height: 100%;
-  background-color: rgba(0, 0, 0, 0.5);
+  background-color: var(--overlay-bg);
   backdrop-filter: blur(3px);
   display: flex;
   align-items: center;
@@ -791,24 +805,25 @@ const goHome = () => {
 }
 
 .modal-content {
-  background: white;
+  background: var(--modal-bg);
   border-radius: 32px;
   padding: 30px;
   max-width: 400px;
   width: 90%;
-  box-shadow: 0 20px 40px rgba(0, 40, 0, 0.3);
+  box-shadow: var(--shadow-strong);
   animation: slideUp 0.3s;
+  color: var(--modal-text);
 }
 
 .modal-content h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 15px;
   font-weight: 500;
   font-size: 1.5rem;
 }
 
 .modal-content p {
-  color: #1a3a1a;
+  color: var(--text-primary);
   margin-bottom: 25px;
   font-size: 1.1rem;
 }
@@ -830,22 +845,23 @@ const goHome = () => {
 }
 
 .modal-confirm {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
 }
 
 .modal-confirm:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
   transform: scale(1.02);
 }
 
 .modal-cancel {
-  background: #e8f5e9;
-  color: #2c5e2e;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .modal-cancel:hover {
-  background: #d4eed7;
+  background: var(--bg-page);
 }
 
 @keyframes fadeIn {

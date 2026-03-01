@@ -1,9 +1,10 @@
 <template>
   <div class="project-details-page">
-    <!-- Шапка: для не-авторов заголовок слева, для авторов только кнопка домой -->
+    <!-- Шапка: для не-авторов заголовок слева, для авторов только кнопки -->
     <header class="details-header" :class="{ 'author-header': isAuthor }">
       <h1 v-if="!isAuthor" class="page-title">{{ project?.title || 'Проект' }}</h1>
       <div class="header-buttons">
+        <ThemeToggle />
         <button class="home-button" @click="goHome" title="На главную">🏠</button>
       </div>
     </header>
@@ -152,6 +153,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Project, User, Task } from '@/types';
 
 const route = useRoute();
@@ -242,7 +244,7 @@ function isTaskOverdue(task: Task): boolean {
     const parts = task.timeline.split('-');
     endStr = parts[1] || '';
   }
-  const endDate = parseDate(endStr || ''); // защита от undefined
+  const endDate = parseDate(endStr || '');
   if (!endDate) return false;
   return today > endDate && task.status !== 'выполнена';
 }
@@ -255,8 +257,8 @@ function isTaskInvalid(task: Task): boolean {
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr || ''); // защита
-  const end = parseDate(endStr || '');     // защита
+  const start = parseDate(startStr || '');
+  const end = parseDate(endStr || '');
   if (!start || !end) return true;
   return start > end;
 }
@@ -268,7 +270,7 @@ function isTaskNotStarted(task: Task): boolean {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
   }
-  const start = parseDate(startStr || ''); // защита
+  const start = parseDate(startStr || '');
   if (!start) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -284,8 +286,8 @@ function isTaskUrgent(task: Task): boolean {
     startStr = parts[0] || '';
     endStr = parts[1] || '';
   }
-  const start = parseDate(startStr || ''); // защита
-  const end = parseDate(endStr || '');     // защита
+  const start = parseDate(startStr || '');
+  const end = parseDate(endStr || '');
   if (!start || !end) return false;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -332,8 +334,8 @@ const activeTasksProgress = computed(() => {
       endStr = parts[1] || '';
     }
 
-    const startDate = parseDate(startStr); // startStr уже строка
-    const endDate = parseDate(endStr);     // endStr уже строка
+    const startDate = parseDate(startStr);
+    const endDate = parseDate(endStr);
     let progress = 0;
     let invalid = false;
     let overdue = false;
@@ -425,14 +427,15 @@ const goToUser = (userId: number) => {
 </script>
 
 <style scoped>
-/* Стили полностью совпадают с предыдущей версией */
 .project-details-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
+/* Шапка */
 .details-header {
   display: flex;
   justify-content: space-between;
@@ -443,12 +446,13 @@ const goToUser = (userId: number) => {
   gap: 10px;
 }
 
+/* Для авторов в шапке только кнопки */
 .author-header {
   justify-content: flex-end;
 }
 
 .page-title {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
 }
@@ -456,6 +460,7 @@ const goToUser = (userId: number) => {
 .header-buttons {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -471,27 +476,34 @@ const goToUser = (userId: number) => {
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
 }
 
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+/* Общие стили для секций */
 .project-section {
   margin-bottom: 28px;
 }
 
 .project-section h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 10px;
   font-weight: 500;
 }
 
 .project-section p {
-  color: #1a3a1a;
+  color: var(--text-primary);
   line-height: 1.6;
 }
 
+/* Список авторов */
 .authors-list {
   display: flex;
   flex-wrap: wrap;
@@ -500,28 +512,31 @@ const goToUser = (userId: number) => {
 
 .author-link {
   cursor: pointer;
-  color: #42b983;
+  color: var(--link-color);
   text-decoration: underline;
   margin-right: 8px;
   display: inline-block;
 }
 
 .author-link:hover {
-  color: #2c5e2e;
+  color: var(--link-hover);
 }
 
+/* ----- Макет для НЕ-авторов ----- */
 .non-author-layout {
   max-width: 800px;
   margin: 0 auto;
 }
 
 .project-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 24px;
-  box-shadow: 0 10px 30px rgba(0, 40, 0, 0.1);
+  box-shadow: var(--shadow-strong);
   padding: 30px;
+  transition: background 0.3s;
 }
 
+/* ----- Макет для АВТОРОВ ----- */
 .author-layout {
   max-width: 1200px;
   margin: 0 auto;
@@ -529,7 +544,7 @@ const goToUser = (userId: number) => {
 
 .project-title-center {
   text-align: center;
-  color: #2c5e2e;
+  color: var(--heading-color);
   font-size: 2.5rem;
   margin-bottom: 30px;
 }
@@ -541,23 +556,25 @@ const goToUser = (userId: number) => {
 }
 
 .info-column {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--bg-column);
   backdrop-filter: blur(4px);
   border-radius: 24px;
   padding: 30px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow);
+  transition: background 0.3s;
 }
 
 .tasks-column {
-  background: rgba(255, 255, 255, 0.6);
+  background: var(--bg-column);
   backdrop-filter: blur(4px);
   border-radius: 24px;
   padding: 30px;
-  box-shadow: 0 5px 15px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow);
+  transition: background 0.3s;
 }
 
 .tasks-column h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 20px;
   font-weight: 500;
   font-size: 1.5rem;
@@ -575,44 +592,45 @@ const goToUser = (userId: number) => {
   align-items: flex-start;
   gap: 15px;
   padding: 15px;
-  background: white;
+  background: var(--bg-card);
   border-radius: 12px;
-  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.05);
+  box-shadow: var(--shadow);
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
-  border-left: 4px solid #42b983;
+  border-left: 4px solid var(--accent-color);
 }
 
 .task-node:hover {
   transform: translateX(5px);
-  box-shadow: 0 6px 15px rgba(66, 185, 131, 0.2);
+  box-shadow: var(--shadow-strong);
 }
 
+/* Классы состояния задач */
 .task-node.task-overdue {
-  background-color: #ffebee;
+  background-color: var(--overdue-bg);
   border-left-color: #f44336;
 }
 
 .task-node.task-urgent {
-  background-color: #fff3e0;
+  background-color: var(--urgent-bg);
   border-left-color: #ff9800;
 }
 
 .task-node.task-invalid {
-  background-color: #f5f5f5;
+  background-color: var(--invalid-bg);
   border-left-color: #9e9e9e;
   opacity: 0.7;
 }
 
 .task-node.task-not-started {
-  background-color: #eeeeee;
+  background-color: var(--not-started-bg);
   border-left-color: #bdbdbd;
   opacity: 0.8;
 }
 
 .task-icon {
   font-size: 1.5rem;
-  color: #42b983;
+  color: var(--accent-color);
 }
 
 .task-content {
@@ -620,19 +638,19 @@ const goToUser = (userId: number) => {
 }
 
 .task-content strong {
-  color: #2c5e2e;
+  color: var(--heading-color);
   display: block;
   margin-bottom: 4px;
 }
 
 .task-status {
-  color: #5f7f5f;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   margin-left: 8px;
 }
 
 .task-content p {
-  color: #1a3a1a;
+  color: var(--text-primary);
   margin: 8px 0 4px;
 }
 
@@ -641,17 +659,19 @@ const goToUser = (userId: number) => {
   margin-top: 4px;
   margin-right: 8px;
   font-size: 0.9rem;
-  color: #2c5e2e;
-  background: #e8f5e9;
+  color: var(--heading-color);
+  background: var(--completed-bg);
   padding: 2px 8px;
   border-radius: 12px;
 }
 
 .task-content small {
-  color: #5f7f5f;
+  color: var(--text-secondary);
 }
 
-.overdue-badge, .invalid-badge, .not-started-badge {
+.overdue-badge,
+.invalid-badge,
+.not-started-badge {
   display: inline-block;
   margin-left: 8px;
   padding: 2px 8px;
@@ -675,19 +695,20 @@ const goToUser = (userId: number) => {
 
 .no-tasks {
   text-align: center;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-style: italic;
   padding: 20px;
 }
 
+/* Диаграмма Ганта */
 .gantt-section {
   margin-top: 30px;
-  border-top: 2px dashed #c8e6c9;
+  border-top: 2px dashed var(--border-color);
   padding-top: 20px;
 }
 
 .gantt-section h3 {
-  color: #1f4f22;
+  color: var(--heading-color);
   margin-bottom: 15px;
   font-weight: 500;
   text-align: center;
@@ -708,7 +729,7 @@ const goToUser = (userId: number) => {
 .gantt-label {
   width: 120px;
   font-weight: 500;
-  color: #2c5e2e;
+  color: var(--heading-color);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -718,7 +739,8 @@ const goToUser = (userId: number) => {
   position: relative;
   flex: 1;
   height: 24px;
-  background: #e0f0e0;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 12px;
   display: flex;
   align-items: center;
@@ -738,20 +760,26 @@ const goToUser = (userId: number) => {
 .gantt-text {
   position: relative;
   z-index: 1;
-  color: #000;
+  color: var(--text-primary);
   font-size: 0.85rem;
   font-weight: 500;
   background-color: transparent;
-  text-shadow: 0 0 2px rgba(255,255,255,0.7);
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
 }
 
-.loading, .error {
+.light-theme .gantt-text {
+  text-shadow: 0 0 2px rgba(255, 255, 255, 0.7);
+}
+
+.loading,
+.error {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }
 
+/* Стили для выполненных задач */
 .completed-tasks {
   display: flex;
   flex-direction: column;
@@ -761,30 +789,31 @@ const goToUser = (userId: number) => {
 
 .completed-task {
   cursor: pointer;
-  background: #f0f9f0;
+  background: var(--completed-bg);
   padding: 10px;
   border-radius: 8px;
-  border-left: 4px solid #42b983;
+  border-left: 4px solid var(--accent-color);
   transition: transform 0.1s, box-shadow 0.1s;
 }
 
 .completed-task:hover {
   transform: translateX(4px);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  box-shadow: var(--shadow);
 }
 
 .completed-task-title {
   font-weight: 600;
-  color: #2c5e2e;
+  color: var(--heading-color);
 }
 
 .completed-task-date {
   display: block;
   font-size: 0.8rem;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 
+/* Кнопки управления проектом */
 .project-actions {
   margin-top: 30px;
   display: flex;
@@ -809,24 +838,24 @@ const goToUser = (userId: number) => {
 }
 
 .edit-project-button {
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
 }
 
 .edit-project-button:hover {
-  background: #3aa876;
+  background: var(--accent-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(66, 185, 131, 0.3);
+  box-shadow: var(--shadow-strong);
 }
 
 .delete-project-button {
-  background: #fee;
-  color: #c44;
+  background: var(--danger-bg);
+  color: var(--danger-color);
 }
 
 .delete-project-button:hover {
-  background: #fdd;
+  background: var(--danger-hover);
   transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(244, 67, 54, 0.2);
+  box-shadow: var(--shadow-strong);
 }
 </style>

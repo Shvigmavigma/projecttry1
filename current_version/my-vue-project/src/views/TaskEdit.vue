@@ -2,7 +2,10 @@
   <div class="task-edit-page">
     <header class="edit-header">
       <h1>Редактирование задачи</h1>
-      <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
     </header>
 
     <div v-if="loading" class="loading">Загрузка...</div>
@@ -69,6 +72,7 @@
 import { ref, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Task } from '@/types';
 
 const route = useRoute();
@@ -137,16 +141,21 @@ function isValidDate(dateStr: string): boolean {
 
 // Разделение старого формата "дата-дата" при загрузке
 function splitOldFormat(task: Task): Task {
-  // Гарантируем, что поля timeline и timelinend всегда строки (пустые, если отсутствуют)
+  // Гарантируем, что поля timeline и timelinend всегда строки
+  const timeline = task.timeline || '';
+  const timelinend = task.timelinend || '';
   const newTask: Task = {
-    title: task.title,
-    status: task.status,
-    body: task.body,
-    timeline: task.timeline || '',
-    timelinend: task.timelinend || '',
-  };
-  if (!newTask.timelinend && newTask.timeline.includes('-')) {
-    const parts = newTask.timeline.split('-') as [string, string];
+  title: task.title,
+  status: task.status,
+  body: task.body,
+  timeline: task.timeline || '',
+  timelinend: task.timelinend || '',
+};
+  
+  // Если нет timelinend, но timeline содержит дефис (старый формат)
+if (task.timeline!.includes('-')) {
+  const parts = task.timeline!.split('-');
+
     newTask.timeline = parts[0];
     newTask.timelinend = parts[1];
   }
@@ -166,7 +175,6 @@ onMounted(async () => {
       error.value = 'Задача не найдена';
     } else {
       task.value = project.value.tasks[taskIndex];
-      // task.value не null, используем ! для TypeScript
       editedTask.value = splitOldFormat(task.value!);
     }
   } catch (err) {
@@ -224,9 +232,10 @@ const goHome = () => {
 <style scoped>
 .task-edit-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
 .edit-header {
@@ -238,9 +247,15 @@ const goHome = () => {
 }
 
 .edit-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -250,25 +265,31 @@ const goHome = () => {
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 50%;
-  width: 50px;
-  height: 50px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .edit-card {
-  background: white;
-  border-radius: 24px;
-  box-shadow: 0 10px 30px rgba(0, 40, 0, 0.1);
-  padding: 30px;
+  background: var(--bg-card);
+  border-radius: 32px;
+  box-shadow: var(--shadow-strong);
+  padding: 40px;
   max-width: 600px;
   margin: 0 auto;
+  transition: background 0.3s;
 }
 
 .form-group {
@@ -278,40 +299,48 @@ const goHome = () => {
 label {
   display: block;
   margin-bottom: 6px;
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-weight: 500;
 }
 
 input, select, textarea {
   width: 100%;
   padding: 12px 16px;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--input-border);
   border-radius: 8px;
   font-size: 1rem;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
   outline: none;
   box-sizing: border-box;
   font-family: inherit;
+  background: var(--input-bg);
+  color: var(--text-primary);
 }
 
 input:focus, select:focus, textarea:focus {
-  border-color: #42b983;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
+}
+
+.light-theme input:focus,
+.light-theme select:focus,
+.light-theme textarea:focus {
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
 
 input.invalid {
-  border-color: #f44336;
+  border-color: var(--danger-color);
 }
 
 input.invalid:focus {
-  border-color: #f44336;
+  border-color: var(--danger-color);
   box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.2);
 }
 
 .error-message {
   display: block;
   margin-top: 4px;
-  color: #f44336;
+  color: var(--danger-color);
   font-size: 0.85rem;
 }
 
@@ -337,12 +366,12 @@ textarea {
 }
 
 .save-button {
-  background-color: #42b983;
-  color: white;
+  background-color: var(--accent-color);
+  color: var(--button-text);
 }
 
 .save-button:hover:not(:disabled) {
-  background-color: #3aa876;
+  background-color: var(--accent-hover);
 }
 
 .save-button:disabled {
@@ -351,17 +380,18 @@ textarea {
 }
 
 .cancel-button {
-  background-color: #e8f5e9;
-  color: #2c5e2e;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
 }
 
 .cancel-button:hover {
-  background-color: #d4eed7;
+  background-color: var(--bg-card);
 }
 
 .loading, .error {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }

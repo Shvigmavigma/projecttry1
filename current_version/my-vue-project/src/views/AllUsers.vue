@@ -2,7 +2,10 @@
   <div class="all-users-page">
     <header class="users-header">
       <h1>Пользователи</h1>
-      <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+      </div>
     </header>
 
     <div class="search-container">
@@ -37,6 +40,7 @@
 import { ref, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { User } from '@/types';
 
 const router = useRouter();
@@ -79,9 +83,10 @@ function goHome() {
 <style scoped>
 .all-users-page {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   padding: 20px;
   box-sizing: border-box;
+  transition: background 0.3s;
 }
 
 .users-header {
@@ -93,9 +98,14 @@ function goHome() {
 }
 
 .users-header h1 {
-  color: #1f4f22;
+  color: var(--heading-color);
   font-size: 2.5rem;
   margin: 0;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
 }
 
 .home-button {
@@ -111,10 +121,19 @@ function goHome() {
   align-items: center;
   justify-content: center;
   transition: background 0.2s;
+  color: var(--text-primary);
 }
 
 .home-button:hover {
-  background: rgba(255,255,255,0.5);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.dark-theme .home-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
 }
 
 .search-container {
@@ -125,17 +144,26 @@ function goHome() {
 .search-container input {
   width: 100%;
   padding: 12px 20px;
-  border: 1px solid #cbd5e0;
+  border: 1px solid var(--input-border);
   border-radius: 50px;
   font-size: 1rem;
   outline: none;
-  transition: border-color 0.2s;
-  background: white;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.search-container input::placeholder {
+  color: var(--text-secondary);
 }
 
 .search-container input:focus {
-  border-color: #42b983;
+  border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
+}
+
+.dark-theme .search-container input:focus {
+  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
 }
 
 .users-grid {
@@ -147,30 +175,30 @@ function goHome() {
 }
 
 .user-card {
-  background: white;
+  background: var(--bg-card);
   border-radius: 16px;
   padding: 20px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
-  transition: transform 0.2s, box-shadow 0.2s;
+  box-shadow: var(--shadow);
+  transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  border: 1px solid #e0f0e0;
+  border: 1px solid var(--border-color);
 }
 
 .user-card:hover {
   transform: translateY(-4px);
-  box-shadow: 0 12px 28px rgba(66, 185, 131, 0.2);
-  border-color: #b8e0b8;
+  box-shadow: var(--shadow-strong);
+  border-color: var(--accent-color);
 }
 
 .user-avatar {
   width: 60px;
   height: 60px;
-  background: #42b983;
-  color: white;
+  background: var(--accent-color);
+  color: var(--button-text);
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -181,33 +209,33 @@ function goHome() {
 }
 
 .user-nickname {
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin-bottom: 4px;
   font-size: 1.2rem;
   font-weight: 600;
 }
 
 .user-fullname {
-  color: #1a3a1a;
+  color: var(--text-primary);
   font-size: 0.95rem;
   margin-bottom: 6px;
 }
 
 .user-email {
-  color: #5f7f5f;
+  color: var(--text-secondary);
   font-size: 0.85rem;
   margin-bottom: 8px;
 }
 
 .user-class, .user-speciality {
-  color: #3b5e3b;
+  color: var(--text-secondary);
   font-size: 0.9rem;
   margin-top: 4px;
 }
 
 .loading, .no-users {
   text-align: center;
-  color: #1f4f22;
+  color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
 }

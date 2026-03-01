@@ -26,6 +26,7 @@ class UserCreate(UserBase):
 class LoginRequest(BaseModel):
     nickname: str
     password: str
+
     
 class UserUpdate(BaseModel):
     fullname: Optional[str] = None

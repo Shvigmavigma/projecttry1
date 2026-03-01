@@ -1,14 +1,17 @@
 <template>
   <div class="main-menu">
-    <!-- Шапка с центрированным приветствием и кнопкой профиля справа -->
+    <!-- Шапка с центрированным приветствием и кнопками справа -->
     <header class="menu-header">
       <div class="header-left"></div> <!-- пустой левый блок для центрирования -->
       <h1 class="welcome-message">
         Добро пожаловать, <span class="username">{{ authStore.user?.nickname }}</span>!
       </h1>
-      <button class="profile-button" @click="goTo('profile')">
-        Личный кабинет
-      </button>
+      <div class="header-actions">
+        <ThemeToggle />
+        <button class="profile-button" @click="goTo('profile')">
+          Личный кабинет
+        </button>
+      </div>
     </header>
 
     <!-- Основные кнопки меню в виде списка слева -->
@@ -34,6 +37,7 @@
 <script setup lang="ts">
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
+import ThemeToggle from '@/components/ThemeToggle.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -51,12 +55,13 @@ const logout = () => {
 <style scoped>
 .main-menu {
   min-height: 100vh;
-  background: linear-gradient(135deg, #f0f9f0 0%, #d4eed7 100%);
+  background: var(--bg-page);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   padding: 2rem;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  transition: background 0.3s;
 }
 
 /* Шапка: сетка для центрирования приветствия */
@@ -68,41 +73,49 @@ const logout = () => {
   gap: 1rem;
 }
 
-
 .welcome-message {
   font-size: 2rem;
   font-weight: 400;
-  color: #2c5e2e;
+  color: var(--heading-color);
   margin: 0;
-  text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
+  text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
   text-align: center;
+}
+
+.light-theme .welcome-message {
+  text-shadow: 1px 1px 2px rgba(255,255,255,0.8);
 }
 
 .username {
   font-weight: 500;
-  color: #1f4f22;
-  /* убран фон и паддинг */
+  color: var(--heading-color);
 }
 
-/* Кнопка личного кабинета справа сверху */
+.header-actions {
+  display: flex;
+  gap: 10px;
+  justify-self: end;
+  align-items: center;
+}
+
+/* Кнопка личного кабинета */
 .profile-button {
-  background: white;
+  background: var(--accent-color);
   border: none;
   border-radius: 40px;
   padding: 0.8rem 1.8rem;
   font-size: 1.1rem;
   font-weight: 500;
-  color: #2c5e2e;
+  color: var(--button-text);
   cursor: pointer;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow);
   transition: all 0.2s ease;
-  border: 1px solid #b8e0b8;
-  justify-self: end; /* прижимаем к правому краю */
+  border: 1px solid var(--border-color);
 }
 
 .profile-button:hover {
-  background: #e8ffe8;
-  box-shadow: 0 6px 15px rgba(66, 185, 131, 0.2);
+  background: var(--accent-hover);
+  box-shadow: var(--shadow-strong);
   transform: translateY(-2px);
 }
 
@@ -123,38 +136,38 @@ const logout = () => {
   width: 100%;
 }
 
-/* Кнопки меню без иконок */
+/* Кнопки меню */
 .menu-item {
-  background: rgba(255, 255, 255, 0.8);
+  background: var(--bg-card);
   backdrop-filter: blur(4px);
-  border: none;
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 1.2rem 2rem;
   font-size: 1.4rem;
   font-weight: 500;
-  color: #1e3b1e;
+  color: var(--text-primary);
   cursor: pointer;
-  box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+  box-shadow: var(--shadow);
   transition: all 0.2s ease;
   text-align: left;
-  border: 1px solid rgba(255,255,255,0.8);
 }
 
 .menu-item:hover {
-  background: white;
-  box-shadow: 0 12px 28px rgba(66, 185, 131, 0.25);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-strong);
   transform: translateX(10px) scale(1.02);
-  border-color: #b8e0b8;
+  border-color: var(--accent-color);
+  color: var(--heading-color);
 }
 
 /* Кнопка выхода */
 .logout-button {
-  background: rgba(255, 255, 255, 0.7);
-  border: 1px solid #c8e6c9;
+  background: var(--danger-bg);
+  border: 1px solid var(--border-color);
   border-radius: 40px;
   padding: 0.8rem 2rem;
   font-size: 1rem;
-  color: #3b5e3b;
+  color: var(--danger-color);
   cursor: pointer;
   align-self: flex-end;
   margin-top: 2rem;
@@ -163,8 +176,7 @@ const logout = () => {
 }
 
 .logout-button:hover {
-  background: #fff;
-  color: #c44;
-  border-color: #faa;
+  background: var(--danger-hover);
+  color: var(--danger-color);
 }
 </style>
