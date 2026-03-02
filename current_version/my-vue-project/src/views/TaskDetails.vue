@@ -69,16 +69,43 @@
       <!-- Ползунок прогресса (только для задач в работе) -->
       <div v-if="task.status === 'в работе'" class="progress-section">
         <h3>Ручной прогресс</h3>
-        <div class="progress-slider">
-          <span class="progress-value">{{ tempProgress }}%</span>
-          <input
-            type="range"
-            v-model.number="tempProgress"
-            min="0"
-            max="100"
-            step="1"
-          />
+        
+        <!-- Линейка с ползунком -->
+        <div class="progress-ruler-container">
+          <div class="progress-value-label">{{ tempProgress }}%</div>
+          <div class="progress-ruler">
+            <!-- Заполненная часть полоски -->
+            <div class="ruler-bar" :style="{ width: tempProgress + '%' }"></div>
+            
+            <!-- Маркеры (риски) -->
+            <div class="ruler-markers">
+              <span class="ruler-marker" v-for="n in 10" :key="n" :style="{ left: (n * 10) + '%' }"></span>
+            </div>
+            
+            <!-- Подписи -->
+            <div class="ruler-labels">
+              <span class="ruler-label" style="left: 0%;">0%</span>
+              <span class="ruler-label" style="left: 25%;">25%</span>
+              <span class="ruler-label" style="left: 50%;">50%</span>
+              <span class="ruler-label" style="left: 75%;">75%</span>
+              <span class="ruler-label" style="left: 100%;">100%</span>
+            </div>
+            
+            <!-- Невидимый ползунок для управления -->
+            <input
+              type="range"
+              v-model.number="tempProgress"
+              class="progress-slider"
+              min="0"
+              max="100"
+              step="1"
+            />
+            
+            <!-- Визуальный ползунок (шарик) -->
+            <div class="slider-thumb" :style="{ left: tempProgress + '%' }"></div>
+          </div>
         </div>
+        
         <!-- Кнопка применения прогресса -->
         <button class="apply-progress-button" @click="openConfirmDialog">Применить прогресс</button>
       </div>
@@ -605,54 +632,123 @@ const goHome = () => {
   font-weight: 500;
 }
 
-.progress-slider {
-  display: flex;
-  align-items: center;
-  gap: 20px;
+.progress-ruler-container {
   width: 100%;
+  position: relative;
+  margin-bottom: 10px;
 }
 
-.progress-value {
+.progress-value-label {
+  font-size: 1.2rem;
   font-weight: 600;
   color: var(--heading-color);
-  min-width: 45px;
-  font-size: 1.2rem;
+  margin-bottom: 10px;
+  text-align: center;
 }
 
-.progress-slider input[type=range] {
-  flex: 1;
+.progress-ruler {
+  position: relative;
+  width: 100%;
+  height: 30px;
+  background: transparent;
+}
+
+.ruler-bar {
+  position: absolute;
+  top: 10px;
+  left: 0;
   height: 8px;
+  background: var(--accent-color);
+  border-radius: 4px;
+  transition: width 0.1s ease;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.ruler-markers {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  width: 100%;
+  height: 8px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ruler-marker {
+  position: absolute;
+  top: 0;
+  width: 1px;
+  height: 8px;
+  background: var(--text-secondary);
+  opacity: 0.3;
+  transform: translateX(-50%);
+}
+
+.ruler-labels {
+  position: absolute;
+  top: 22px;
+  left: 0;
+  width: 100%;
+  height: 20px;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ruler-label {
+  position: absolute;
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.light-theme .ruler-marker {
+  opacity: 0.5;
+}
+
+.light-theme .ruler-label {
+  color: var(--text-secondary);
+}
+
+.progress-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 30px;
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  background: var(--input-bg);
-  border-radius: 4px;
+  background: transparent;
   outline: none;
+  z-index: 10;
+  margin: 0;
+  padding: 0;
+  opacity: 0; /* Делаем невидимым, но оставляем функциональным */
+  cursor: pointer;
 }
 
-.progress-slider input[type=range]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 24px;
-  height: 24px;
+/* Визуальный ползунок (шарик) */
+.slider-thumb {
+  position: absolute;
+  top: 4px;
+  width: 20px;
+  height: 20px;
   background: var(--accent-color);
   border-radius: 50%;
-  cursor: pointer;
+  transform: translateX(-50%);
+  pointer-events: none;
+  z-index: 5;
   box-shadow: 0 2px 6px var(--shadow);
-  transition: transform 0.1s;
+  border: 2px solid white;
+  transition: left 0.1s ease;
 }
 
-.progress-slider input[type=range]::-webkit-slider-thumb:hover {
-  transform: scale(1.15);
+/* При наведении на область ползунка шарик увеличивается */
+.progress-ruler:hover .slider-thumb {
+  transform: translateX(-50%) scale(1.15);
   background: var(--accent-hover);
-}
-
-.progress-slider input[type=range]::-moz-range-thumb {
-  width: 24px;
-  height: 24px;
-  background: var(--accent-color);
-  border-radius: 50%;
-  cursor: pointer;
-  border: none;
 }
 
 .apply-progress-button {
@@ -666,6 +762,7 @@ const goHome = () => {
   cursor: pointer;
   transition: background 0.2s, transform 0.1s;
   box-shadow: var(--shadow);
+  margin-top: 10px;
 }
 
 .apply-progress-button:hover {
