@@ -7,13 +7,22 @@ export interface User {
   email: string;
 }
 
+export interface SubTask {
+  id: string;         
+  title: string;
+  description?: string;
+  progressPercent: number; 
+  completed: boolean;
+}
+
 export interface Task {
   title: string;
   status: string;
   body: string;
   timeline?: string;
   timelinend?: string;
-  progress?: number;
+  progress?: number;   
+  subtasks?: SubTask[]; 
 }
 
 export interface Project {

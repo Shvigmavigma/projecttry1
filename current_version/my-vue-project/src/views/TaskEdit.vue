@@ -12,6 +12,7 @@
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="editedTask" class="edit-card">
       <form @submit.prevent="handleSave">
+        <!-- Основные поля задачи -->
         <div class="form-group">
           <label for="title">Название</label>
           <input id="title" v-model="editedTask.title" type="text" required />
@@ -31,34 +32,89 @@
           <textarea id="body" v-model="editedTask.body" rows="4" required></textarea>
         </div>
 
-        <div class="form-group">
-          <label for="timeline">Дата начала (ДД.ММ.ГГГГ)</label>
-          <input
-            id="timeline"
-            :value="editedTask.timeline"
-            @input="onTimelineInput"
-            type="text"
-            placeholder="01.01.2025"
-            :class="{ 'invalid': timelineError }"
-          />
-          <span v-if="timelineError" class="error-message">{{ timelineError }}</span>
+        <div class="form-row">
+          <div class="form-group">
+            <label for="timeline">Дата начала</label>
+            <input
+              id="timeline"
+              :value="editedTask.timeline"
+              @input="onTimelineInput"
+              type="text"
+              placeholder="01.01.2025"
+              :class="{ 'invalid': timelineError }"
+            />
+            <span v-if="timelineError" class="error-message">{{ timelineError }}</span>
+          </div>
+          <div class="form-group">
+            <label for="timelinend">Дата окончания</label>
+            <input
+              id="timelinend"
+              :value="editedTask.timelinend"
+              @input="onTimelinendInput"
+              type="text"
+              placeholder="31.12.2025"
+              :class="{ 'invalid': timelinendError }"
+            />
+            <span v-if="timelinendError" class="error-message">{{ timelinendError }}</span>
+          </div>
         </div>
 
-        <div class="form-group">
-          <label for="timelinend">Дата окончания (ДД.ММ.ГГГГ)</label>
-          <input
-            id="timelinend"
-            :value="editedTask.timelinend"
-            @input="onTimelinendInput"
-            type="text"
-            placeholder="31.12.2025"
-            :class="{ 'invalid': timelinendError }"
-          />
-          <span v-if="timelinendError" class="error-message">{{ timelinendError }}</span>
+        <!-- Блок подзадач -->
+        <div class="form-section">
+          <div class="subtasks-header">
+            <h3>Подзадачи</h3>
+            <button type="button" class="add-subtask-button" @click="addSubtask">+ Добавить подзадачу</button>
+          </div>
+
+          <div v-if="subtasks.length === 0" class="no-subtasks">
+            Нет подзадач. Добавьте подзадачи, чтобы распределить прогресс.
+          </div>
+
+          <div v-else class="subtasks-list">
+            <div
+              v-for="(subtask, index) in subtasks"
+              :key="subtask.id"
+              class="subtask-item"
+            >
+              <div class="subtask-header">
+                <input
+                  v-model="subtask.title"
+                  placeholder="Название подзадачи"
+                  class="subtask-title-input"
+                />
+                <button
+                  type="button"
+                  class="remove-subtask"
+                  @click="removeSubtask(index)"
+                  title="Удалить подзадачу"
+                >✕</button>
+              </div>
+              <textarea
+                v-model="subtask.description"
+                placeholder="Описание (необязательно)"
+                rows="2"
+                class="subtask-description"
+              ></textarea>
+              <div class="subtask-percent">
+                <label>Процент от задачи:</label>
+                <input
+                  type="number"
+                  v-model.number="subtask.progressPercent"
+                  min="0"
+                  max="100"
+                  step="1"
+                />%
+                <span class="percent-hint">(сумма: {{ totalSubtasksPercent }}%)</span>
+              </div>
+            </div>
+          </div>
+          <div v-if="totalSubtasksPercent > 100" class="error-message">
+            Сумма процентов подзадач не может превышать 100%! Текущая сумма: {{ totalSubtasksPercent }}%
+          </div>
         </div>
 
         <div class="button-group">
-          <button type="submit" class="save-button" :disabled="saving">
+          <button type="submit" class="save-button" :disabled="saving || totalSubtasksPercent > 100">
             {{ saving ? 'Сохранение...' : 'Сохранить' }}
           </button>
           <button type="button" class="cancel-button" @click="goBack">Отмена</button>
@@ -69,11 +125,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Task } from '@/types';
+import type { Task, SubTask } from '@/types';
 
 const route = useRoute();
 const router = useRouter();
@@ -91,7 +147,15 @@ const saving = ref(false);
 const timelineError = ref('');
 const timelinendError = ref('');
 
-// Функция форматирования ввода даты (маска)
+// Подзадачи (локальное состояние формы)
+const subtasks = ref<SubTask[]>([]);
+
+// Вычисляем общую сумму процентов подзадач
+const totalSubtasksPercent = computed(() => {
+  return subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0);
+});
+
+// Функции для работы с датами (без изменений)
 function formatDateInput(value: string): string {
   let digits = value.replace(/\D/g, '');
   if (digits.length > 8) digits = digits.slice(0, 8);
@@ -108,7 +172,6 @@ function formatDateInput(value: string): string {
   return formatted;
 }
 
-// Обработчики ввода с маской
 const onTimelineInput = (e: Event) => {
   const input = e.target as HTMLInputElement;
   const formatted = formatDateInput(input.value);
@@ -127,9 +190,8 @@ const onTimelinendInput = (e: Event) => {
   timelinendError.value = '';
 };
 
-// Функция проверки корректности даты
 function isValidDate(dateStr: string): boolean {
-  if (!dateStr) return true; // пустое поле допустимо
+  if (!dateStr) return true;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return false;
   const [day, month, year] = parts.map(Number) as [number, number, number];
@@ -139,29 +201,25 @@ function isValidDate(dateStr: string): boolean {
   return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
-// Разделение старого формата "дата-дата" при загрузке
 function splitOldFormat(task: Task): Task {
-  // Гарантируем, что поля timeline и timelinend всегда строки
   const timeline = task.timeline || '';
   const timelinend = task.timelinend || '';
   const newTask: Task = {
-  title: task.title,
-  status: task.status,
-  body: task.body,
-  timeline: task.timeline || '',
-  timelinend: task.timelinend || '',
-};
-  
-  // Если нет timelinend, но timeline содержит дефис (старый формат)
-if (task.timeline!.includes('-')) {
-  const parts = task.timeline!.split('-');
-
+    title: task.title,
+    status: task.status,
+    body: task.body,
+    timeline,
+    timelinend,
+  };
+  if (!timelinend && timeline.includes('-')) {
+    const parts = timeline.split('-') as [string, string];
     newTask.timeline = parts[0];
     newTask.timelinend = parts[1];
   }
   return newTask;
 }
 
+// Загрузка существующей задачи
 onMounted(async () => {
   if (isNaN(projectId) || isNaN(taskIndex) || taskIndex < 0) {
     error.value = 'Некорректные параметры';
@@ -176,6 +234,8 @@ onMounted(async () => {
     } else {
       task.value = project.value.tasks[taskIndex];
       editedTask.value = splitOldFormat(task.value!);
+      // Инициализируем подзадачи
+      subtasks.value = task.value.subtasks ? task.value.subtasks.map(st => ({ ...st })) : [];
     }
   } catch (err) {
     error.value = 'Ошибка загрузки';
@@ -185,7 +245,23 @@ onMounted(async () => {
   }
 });
 
-const handleSave = async () => {
+// Управление подзадачами
+function addSubtask() {
+  subtasks.value.push({
+    id: Date.now() + Math.random().toString(36).substr(2, 9),
+    title: '',
+    description: '',
+    progressPercent: 0,
+    completed: false,
+  });
+}
+
+function removeSubtask(index: number) {
+  subtasks.value.splice(index, 1);
+}
+
+// Сохранение
+async function handleSave() {
   if (!project.value || !editedTask.value || saving.value) return;
 
   // Валидация дат
@@ -195,21 +271,23 @@ const handleSave = async () => {
   const startValid = isValidDate(editedTask.value.timeline || '');
   const endValid = isValidDate(editedTask.value.timelinend || '');
 
-  if (!startValid) {
-    timelineError.value = 'Неверный формат даты начала';
-  }
-  if (!endValid) {
-    timelinendError.value = 'Неверный формат даты окончания';
-  }
+  if (!startValid) timelineError.value = 'Неверный формат даты начала';
+  if (!endValid) timelinendError.value = 'Неверный формат даты окончания';
+  if (!startValid || !endValid) return;
 
-  if (!startValid || !endValid) {
+  // Проверка суммы процентов подзадач
+  if (totalSubtasksPercent.value > 100) {
+    alert(`Сумма процентов подзадач (${totalSubtasksPercent.value}%) не может превышать 100%`);
     return;
   }
 
   saving.value = true;
   try {
     const updatedTasks = [...project.value.tasks];
-    updatedTasks[taskIndex] = { ...editedTask.value } as Task;
+    updatedTasks[taskIndex] = {
+      ...editedTask.value,
+      subtasks: subtasks.value, // сохраняем подзадачи
+    } as Task;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
     router.push(`/project/${projectId}/task/${taskIndex}`);
   } catch (err) {
@@ -218,15 +296,11 @@ const handleSave = async () => {
   } finally {
     saving.value = false;
   }
-};
+}
 
-const goBack = () => {
-  router.push(`/project/${projectId}/task/${taskIndex}`);
-};
-
-const goHome = () => {
-  router.push('/main');
-};
+// Навигация
+const goBack = () => router.push(`/project/${projectId}/task/${taskIndex}`);
+const goHome = () => router.push('/main');
 </script>
 
 <style scoped>
@@ -346,6 +420,114 @@ input.invalid:focus {
 
 textarea {
   resize: vertical;
+}
+
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* Стили для подзадач */
+.form-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px dashed var(--border-color);
+}
+
+.subtasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.add-subtask-button {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 30px;
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.no-subtasks {
+  text-align: center;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 1rem;
+  border: 1px dashed var(--border-color);
+  border-radius: 8px;
+}
+
+.subtasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.subtask-item {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  background: var(--bg-card);
+}
+
+.subtask-header {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.subtask-title-input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.remove-subtask {
+  background: none;
+  border: none;
+  color: var(--danger-color);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0 0.5rem;
+}
+
+.subtask-description {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+  margin-bottom: 0.5rem;
+  resize: vertical;
+}
+
+.subtask-percent {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.subtask-percent input {
+  width: 70px;
+  padding: 0.3rem;
+  border: 1px solid var(--input-border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+
+.percent-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
 }
 
 .button-group {

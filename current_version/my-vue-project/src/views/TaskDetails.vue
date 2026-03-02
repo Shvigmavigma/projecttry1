@@ -1,5 +1,6 @@
 <template>
   <div class="task-details-page">
+    <!-- Шапка страницы -->
     <header class="details-header">
       <h1>Детали задачи</h1>
       <div class="header-actions">
@@ -12,22 +13,26 @@
       </div>
     </header>
 
+    <!-- Состояния загрузки/ошибки -->
     <div v-if="loading" class="loading">Загрузка...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
+
+    <!-- Основной контент задачи -->
     <div v-else-if="task" class="task-card" :class="taskStatusClass">
       <h2 class="task-title">{{ task.title }}</h2>
 
-      <div class="task-section">
+      <!-- Основная информация -->
+      <section class="task-section">
         <h3>Статус</h3>
         <p>{{ task.status }}</p>
-      </div>
+      </section>
 
-      <div class="task-section">
+      <section class="task-section">
         <h3>Описание</h3>
         <p>{{ task.body }}</p>
-      </div>
+      </section>
 
-      <div class="task-section">
+      <section class="task-section">
         <h3>Период выполнения</h3>
         <p>
           <span :class="{ 'invalid-date': !isValidDateFormat(task.timeline) }">
@@ -44,17 +49,17 @@
         <span v-if="!isValidDateFormat(task.timelinend) && task.timelinend" class="date-warning">
           ⚠️ Неверный формат даты окончания
         </span>
-      </div>
+      </section>
 
-      <!-- Диаграмма Ганта с прогрессом -->
-      <div class="gantt-section">
+      <!-- Диаграмма Ганта -->
+      <section class="gantt-section">
         <h3>Прогресс выполнения</h3>
         <div class="gantt-container">
           <div class="gantt-bar-container">
             <div
               class="gantt-bar"
-              :style="{ width: progress + '%', backgroundColor: barColor }"
-              :title="`Прогресс: ${progress.toFixed(1)}%`"
+              :style="{ width: displayedProgress + '%', backgroundColor: barColor }"
+              :title="`Прогресс: ${displayedProgress.toFixed(1)}%`"
             ></div>
             <span class="gantt-dates">{{ task.timeline || '?' }} – {{ task.timelinend || '?' }}</span>
           </div>
@@ -64,25 +69,46 @@
             <span>{{ task.timelinend || '?' }}</span>
           </div>
         </div>
-      </div>
+      </section>
 
-      <!-- Ползунок прогресса (только для задач в работе) -->
-      <div v-if="task.status === 'в работе'" class="progress-section">
-        <h3>Ручной прогресс</h3>
-        
-        <!-- Линейка с ползунком -->
+      <!-- Блок подзадач -->
+      <section v-if="subtasks.length > 0" class="subtasks-section">
+        <h3>Подзадачи</h3>
+        <div class="subtasks-list">
+          <div
+            v-for="subtask in subtasks"
+            :key="subtask.id"
+            class="subtask-item"
+            :class="{ completed: subtask.completed }"
+          >
+            <div class="subtask-info">
+              <input
+                type="checkbox"
+                :checked="subtask.completed"
+                @change="toggleSubtask(subtask)"
+                :disabled="actionInProgress"
+              />
+              <span class="subtask-title">{{ subtask.title }}</span>
+              <span class="subtask-percent">{{ subtask.progressPercent }}%</span>
+            </div>
+            <p v-if="subtask.description" class="subtask-description">{{ subtask.description }}</p>
+          </div>
+        </div>
+        <div class="subtasks-summary">
+          Прогресс от подзадач: {{ completedSubtasksPercent }}% / {{ totalSubtasksPercent }}%
+        </div>
+      </section>
+
+      <!-- Ползунок дополнительного прогресса (только если сумма подзадач < 100 и задача в работе) -->
+      <section v-if="showManualProgress" class="progress-section">
+        <h3>Дополнительный прогресс</h3>
         <div class="progress-ruler-container">
           <div class="progress-value-label">{{ tempProgress }}%</div>
           <div class="progress-ruler">
-            <!-- Заполненная часть полоски -->
             <div class="ruler-bar" :style="{ width: tempProgress + '%' }"></div>
-            
-            <!-- Маркеры (риски) -->
             <div class="ruler-markers">
               <span class="ruler-marker" v-for="n in 10" :key="n" :style="{ left: (n * 10) + '%' }"></span>
             </div>
-            
-            <!-- Подписи -->
             <div class="ruler-labels">
               <span class="ruler-label" style="left: 0%;">0%</span>
               <span class="ruler-label" style="left: 25%;">25%</span>
@@ -90,28 +116,22 @@
               <span class="ruler-label" style="left: 75%;">75%</span>
               <span class="ruler-label" style="left: 100%;">100%</span>
             </div>
-            
-            <!-- Невидимый ползунок для управления -->
             <input
               type="range"
               v-model.number="tempProgress"
               class="progress-slider"
-              min="0"
+              :min="minProgress"
               max="100"
               step="1"
             />
-            
-            <!-- Визуальный ползунок (шарик) -->
             <div class="slider-thumb" :style="{ left: tempProgress + '%' }"></div>
           </div>
         </div>
-        
-        <!-- Кнопка применения прогресса -->
         <button class="apply-progress-button" @click="openConfirmDialog">Применить прогресс</button>
-      </div>
+      </section>
 
       <!-- Кнопки действий -->
-      <div class="action-buttons">
+      <section class="action-buttons">
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask" :disabled="actionInProgress">
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
@@ -144,17 +164,17 @@
             <button class="status-option cancel" @click="showRenewOptions = false">Отмена</button>
           </div>
         </div>
-      </div>
+      </section>
 
       <!-- Бейджики состояния -->
-      <div class="status-badges">
+      <section class="status-badges">
         <span v-if="isInvalid" class="badge invalid">Невозможный дедлайн</span>
         <span v-if="isOverdue" class="badge overdue">Просрочено</span>
         <span v-if="isUrgent && !isOverdue && !isInvalid" class="badge urgent">Срочно</span>
-      </div>
+      </section>
     </div>
 
-    <!-- Модальное окно подтверждения -->
+    <!-- Модальное окно подтверждения прогресса -->
     <div v-if="showConfirmDialog" class="modal-overlay" @click.self="closeConfirmDialog">
       <div class="modal-content">
         <h3>Подтверждение</h3>
@@ -173,26 +193,31 @@ import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Task } from '@/types';
+import type { Task, SubTask } from '@/types';
 
+// --- Маршрутизация и хранилище ---
 const route = useRoute();
 const router = useRouter();
 const projectsStore = useProjectsStore();
 
+// --- Параметры URL ---
 const projectId = Number(route.params.projectId);
 const taskIndex = Number(route.params.taskIndex);
 
-const project = ref<any>(null);
-const task = ref<Task | null>(null);
+// --- Состояние ---
+const project = ref<any>(null);          // текущий проект (содержит список задач)
+const task = ref<Task | null>(null);     // текущая задача
 const loading = ref(true);
 const error = ref('');
-const actionInProgress = ref(false);
-const showRenewOptions = ref(false);
+const actionInProgress = ref(false);     // блокировка повторных действий
+const showRenewOptions = ref(false);      // показать варианты возобновления
 
-const progressValue = ref(0);
-const tempProgress = ref(0);
-const showConfirmDialog = ref(false);
+// --- Прогресс ---
+const progressValue = ref(0);             // сохранённое значение прогресса задачи
+const tempProgress = ref(0);              // временное значение ползунка
+const showConfirmDialog = ref(false);      // видимость модального окна
 
+// --- Вспомогательные функции (без изменений) ---
 function parseDate(dateStr?: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
@@ -223,6 +248,7 @@ function isValidDateFormat(dateStr?: string): boolean {
   return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
+// --- Загрузка данных ---
 onMounted(async () => {
   if (isNaN(projectId) || isNaN(taskIndex) || taskIndex < 0) {
     error.value = 'Некорректные параметры';
@@ -248,6 +274,7 @@ onMounted(async () => {
   }
 });
 
+// --- Наблюдатель за задачей (обновляет значения прогресса при изменении задачи) ---
 watch(task, (newTask) => {
   if (newTask) {
     progressValue.value = newTask.progress ?? 0;
@@ -255,7 +282,37 @@ watch(task, (newTask) => {
   }
 });
 
-// Вычисляемые свойства
+// --- Вычисляемые свойства для подзадач ---
+const subtasks = computed(() => task.value?.subtasks || []);
+const totalSubtasksPercent = computed(() => {
+  return subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0);
+});
+const completedSubtasksPercent = computed(() => {
+  return subtasks.value
+    .filter(st => st.completed)
+    .reduce((sum, st) => sum + (st.progressPercent || 0), 0);
+});
+
+// --- Управление прогрессом ---
+const minProgress = computed(() => completedSubtasksPercent.value);
+const showManualProgress = computed(() => {
+  return task.value?.status === 'в работе' && totalSubtasksPercent.value < 100;
+});
+const displayedProgress = computed(() => {
+  if (subtasks.value.length > 0) {
+    return Math.max(completedSubtasksPercent.value, progressValue.value);
+  }
+  return progressValue.value;
+});
+
+// Корректировка ползунка при изменении minProgress
+watch(minProgress, (newMin) => {
+  if (tempProgress.value < newMin) {
+    tempProgress.value = newMin;
+  }
+});
+
+// --- Вычисляемые свойства для статусов задачи (просрочка, срочность и т.д.) ---
 const isInvalid = computed(() => {
   const t = task.value;
   if (!t) return false;
@@ -312,29 +369,6 @@ const isUrgent = computed(() => {
   return prog > 2 / 3 && t.status !== 'выполнена';
 });
 
-const progress = computed(() => {
-  const t = task.value;
-  if (!t || isInvalid.value) return 0;
-  let startStr = t.timeline;
-  let endStr = t.timelinend;
-  if (!endStr && startStr && startStr.includes('-')) {
-    const parts = startStr.split('-');
-    startStr = parts[0] || '';
-    endStr = parts[1] || '';
-  }
-  const start = parseDate(startStr || '');
-  const end = parseDate(endStr || '');
-  if (!start || !end) return 0;
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  const totalDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (totalDuration <= 0) return today >= start ? 100 : 0;
-  let elapsed = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (elapsed < 0) elapsed = 0;
-  if (elapsed > totalDuration) elapsed = totalDuration;
-  return (elapsed / totalDuration) * 100;
-});
-
 const barColor = computed(() => {
   if (isInvalid.value) return '#9e9e9e';
   if (isOverdue.value) return '#f44336';
@@ -349,7 +383,72 @@ const taskStatusClass = computed(() => {
   return '';
 });
 
-// Методы
+// --- Методы ---
+
+/**
+ * Переключение состояния подзадачи
+ */
+const toggleSubtask = async (subtask: SubTask) => {
+  const currentProject = project.value;
+  const currentTask = task.value;
+  if (!currentProject || !currentTask) return;
+  actionInProgress.value = true;
+
+  try {
+    // Сумма процентов выполненных подзадач до изменения
+    const oldCompletedSum = currentTask.subtasks
+      ?.filter(st => st.completed)
+      .reduce((sum, st) => sum + (st.progressPercent || 0), 0) ?? 0;
+
+    // Обновлённый список подзадач
+    const updatedSubtasks = currentTask.subtasks?.map(st => {
+      if (st.id === subtask.id) {
+        return { ...st, completed: !st.completed };
+      }
+      return st;
+    }) || [];
+
+    // Новая сумма выполненных
+    const newCompletedSum = updatedSubtasks
+      .filter(st => st.completed)
+      .reduce((sum, st) => sum + (st.progressPercent || 0), 0);
+
+    // Определяем новый прогресс задачи
+    let newProgress;
+    if (progressValue.value > oldCompletedSum) {
+      // Был установлен ручной прогресс выше суммы подзадач – оставляем его
+      newProgress = progressValue.value;
+    } else {
+      // Прогресс равнялся сумме подзадач – обновляем до новой суммы
+      newProgress = newCompletedSum;
+    }
+
+    const updatedTask = {
+      ...currentTask,
+      subtasks: updatedSubtasks,
+      progress: newProgress,
+    };
+
+    const updatedTasks = [...currentProject.tasks];
+    updatedTasks[taskIndex] = updatedTask;
+    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
+
+    // Обновляем локальные ссылки
+    project.value.tasks = updatedTasks;
+    task.value = updatedTask;
+    progressValue.value = newProgress;
+    tempProgress.value = newProgress;
+  } catch (err) {
+    console.error('Ошибка при переключении подзадачи:', err);
+    alert('Не удалось обновить подзадачу');
+  } finally {
+    actionInProgress.value = false;
+  }
+};
+
+/**
+ * Завершение задачи (статус → выполнена)
+ */
 const completeTask = async () => {
   const currentProject = project.value;
   const currentTask = task.value;
@@ -368,6 +467,9 @@ const completeTask = async () => {
   }
 };
 
+/**
+ * Изменение статуса задачи (для возобновления)
+ */
 const updateTaskStatus = async (newStatus: string) => {
   const currentProject = project.value;
   const currentTask = task.value;
@@ -388,16 +490,25 @@ const updateTaskStatus = async (newStatus: string) => {
   }
 };
 
+/**
+ * Открыть диалог подтверждения изменения прогресса
+ */
 const openConfirmDialog = () => {
   if (tempProgress.value === progressValue.value) return;
   showConfirmDialog.value = true;
 };
 
+/**
+ * Закрыть диалог без сохранения
+ */
 const closeConfirmDialog = () => {
   tempProgress.value = progressValue.value;
   showConfirmDialog.value = false;
 };
 
+/**
+ * Подтвердить изменение прогресса
+ */
 const confirmProgressChange = async () => {
   const currentProject = project.value;
   const currentTask = task.value;
@@ -405,6 +516,13 @@ const confirmProgressChange = async () => {
     closeConfirmDialog();
     return;
   }
+  if (tempProgress.value < minProgress.value) {
+    alert(`Прогресс не может быть меньше ${minProgress.value}% (выполненные подзадачи)`);
+    tempProgress.value = progressValue.value;
+    closeConfirmDialog();
+    return;
+  }
+  actionInProgress.value = true;
   try {
     const updatedTasks = [...currentProject.tasks];
     updatedTasks[taskIndex] = {
@@ -412,7 +530,7 @@ const confirmProgressChange = async () => {
       progress: tempProgress.value
     } as Task;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    project.value = { ...currentProject, tasks: updatedTasks };
+    project.value.tasks = updatedTasks;
     task.value = updatedTasks[taskIndex];
     progressValue.value = tempProgress.value;
   } catch (err) {
@@ -420,20 +538,18 @@ const confirmProgressChange = async () => {
     alert('Не удалось изменить прогресс');
     tempProgress.value = progressValue.value;
   } finally {
+    actionInProgress.value = false;
     showConfirmDialog.value = false;
   }
 };
 
-const goBack = () => {
-  router.push(`/project/${projectId}`);
-};
-
-const goHome = () => {
-  router.push('/main');
-};
+// --- Навигация ---
+const goBack = () => router.push(`/project/${projectId}`);
+const goHome = () => router.push('/main');
 </script>
 
 <style scoped>
+/* ---------- Общие стили ---------- */
 .task-details-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -492,6 +608,7 @@ const goHome = () => {
   box-shadow: var(--shadow-strong);
 }
 
+/* ---------- Карточка задачи ---------- */
 .task-card {
   background: var(--bg-card);
   border-radius: 32px;
@@ -543,6 +660,7 @@ const goHome = () => {
   line-height: 1.6;
 }
 
+/* ---------- Валидация дат ---------- */
 .invalid-date {
   color: #f44336;
   font-weight: 600;
@@ -556,6 +674,7 @@ const goHome = () => {
   margin-top: 4px;
 }
 
+/* ---------- Диаграмма Ганта ---------- */
 .gantt-section {
   margin-top: 40px;
   padding-top: 20px;
@@ -616,6 +735,80 @@ const goHome = () => {
   margin-top: 5px;
 }
 
+/* ---------- Подзадачи ---------- */
+.subtasks-section {
+  margin-top: 30px;
+  padding-top: 20px;
+  border-top: 2px dashed var(--border-color);
+}
+
+.subtasks-section h3 {
+  color: var(--heading-color);
+  margin-bottom: 15px;
+  font-weight: 500;
+}
+
+.subtasks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.subtask-item {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+  transition: opacity 0.2s;
+}
+
+.subtask-item.completed {
+  opacity: 0.6;
+  background: var(--completed-bg);
+}
+
+.subtask-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.subtask-info input[type=checkbox] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.subtask-title {
+  flex: 1;
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.subtask-percent {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  background: var(--bg-page);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.subtask-description {
+  margin-top: 8px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  padding-left: 28px;
+}
+
+.subtasks-summary {
+  margin-top: 10px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* ---------- Ползунок прогресса ---------- */
 .progress-section {
   margin-top: 30px;
   padding-top: 20px;
@@ -725,11 +918,10 @@ const goHome = () => {
   z-index: 10;
   margin: 0;
   padding: 0;
-  opacity: 0; /* Делаем невидимым, но оставляем функциональным */
+  opacity: 0;
   cursor: pointer;
 }
 
-/* Визуальный ползунок (шарик) */
 .slider-thumb {
   position: absolute;
   top: 4px;
@@ -745,7 +937,6 @@ const goHome = () => {
   transition: left 0.1s ease;
 }
 
-/* При наведении на область ползунка шарик увеличивается */
 .progress-ruler:hover .slider-thumb {
   transform: translateX(-50%) scale(1.15);
   background: var(--accent-hover);
@@ -770,6 +961,7 @@ const goHome = () => {
   transform: scale(1.02);
 }
 
+/* ---------- Кнопки действий ---------- */
 .action-buttons {
   margin-top: 30px;
   text-align: center;
@@ -850,6 +1042,7 @@ const goHome = () => {
   cursor: not-allowed;
 }
 
+/* ---------- Бейджики состояния ---------- */
 .status-badges {
   margin-top: 20px;
   display: flex;
@@ -878,6 +1071,7 @@ const goHome = () => {
   background-color: #9e9e9e;
 }
 
+/* ---------- Состояния загрузки ---------- */
 .loading, .error {
   text-align: center;
   color: var(--text-primary);
@@ -885,7 +1079,7 @@ const goHome = () => {
   padding: 40px;
 }
 
-/* Модальное окно */
+/* ---------- Модальное окно ---------- */
 .modal-overlay {
   position: fixed;
   top: 0;
