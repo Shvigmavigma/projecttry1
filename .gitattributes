@@ -1,0 +1,17 @@
+# Автоматически определять текстовые файлы и нормализовать их
+* text=auto
+
+# Скрипты должны всегда иметь LF в репозитории
+*.sh text eol=lf
+*.bash text eol=lf
+
+# Для файлов Vue, TS, JS также можно явно указать
+*.vue text eol=lf
+*.ts text eol=lf
+*.js text eol=lf
+*.json text eol=lf
+
+# Файлы с определёнными расширениями оставить как есть (бинарные)
+*.png binary
+*.jpg binary
+*.ico binary

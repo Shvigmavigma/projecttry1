@@ -29,7 +29,6 @@ const emit = defineEmits<{
   (e: 'submit', data: any): void;
 }>();
 
-// Явно указываем тип для localForm, чтобы tasks был Task[]
 const localForm = ref<{
   title: string;
   body: string;
@@ -49,7 +48,7 @@ watch(() => props.initialData, (val) => {
       title: val.title,
       body: val.body,
       underbody: val.underbody,
-      tasks: val.tasks, // val.tasks имеет тип Task[], ошибки нет
+      tasks: val.tasks, // val.tasks имеет тип Task[]
     };
     tasksText.value = JSON.stringify(val.tasks || [], null, 2);
   }
