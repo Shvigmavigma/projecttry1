@@ -11,7 +11,6 @@
     <div v-if="loadingUser" class="loading">Загрузка данных пользователя...</div>
     <div v-else-if="errorUser" class="error">{{ errorUser }}</div>
     <div v-else-if="user" class="user-info-card">
-      <!-- Аватарка кликабельна, если есть -->
       <div class="user-avatar" @click="openAvatarModal" :class="{ clickable: user.avatar }">
         <img
           v-if="user.avatar && !avatarError"
@@ -43,24 +42,31 @@
           <p class="card-description">{{ project.body.slice(0, 100) }}...</p>
           <div class="card-footer">
             <span class="authors-label">Авторы:</span>
-            <span class="authors-list">
-              <span
+            <div class="authors-list">
+              <div
                 v-for="(authorId, index) in project.authors_ids"
                 :key="authorId"
                 class="author-item"
+                @click.stop="goToUser(authorId)"
               >
-                <span class="author-link" @click.stop="goToUser(authorId)">
-                  {{ getAuthorNickname(authorId) }}
-                </span>
-                <span v-if="index < project.authors_ids.length - 1">, </span>
-              </span>
-            </span>
+                <div class="author-avatar">
+                  <img
+                    v-if="getAuthorAvatar(authorId) && !authorImageError[authorId]"
+                    :src="getAuthorAvatar(authorId)"
+                    :alt="getAuthorNickname(authorId)"
+                    @error="authorImageError[authorId] = true"
+                  />
+                  <span v-else>{{ getAuthorInitials(authorId) }}</span>
+                </div>
+                <span class="author-name">{{ getAuthorNickname(authorId) }}</span>
+                <span v-if="index < project.authors_ids.length - 1" class="separator">,</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Модальное окно для аватарки -->
     <AvatarModal
       :show="showAvatarModal"
       :src="avatarUrl"
@@ -89,8 +95,8 @@ const loadingProjects = ref(true);
 const errorUser = ref('');
 const avatarError = ref(false);
 const showAvatarModal = ref(false);
+const authorImageError = ref<Record<number, boolean>>({});
 
-// Базовый URL бэкенда (можно вынести в переменные окружения)
 const baseUrl = 'http://localhost:8000';
 
 const avatarUrl = computed(() => {
@@ -104,32 +110,37 @@ const openAvatarModal = () => {
   }
 };
 
-// Функция загрузки данных пользователя и его проектов
+// Загрузка данных пользователя и его проектов
 const loadUserData = async (id: number) => {
   loadingUser.value = true;
   loadingProjects.value = true;
   errorUser.value = '';
   avatarError.value = false;
+  authorImageError.value = {};
 
+  // Загружаем всех пользователей один раз (если ещё не загружены)
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
 
-  try {
-    await usersStore.searchUsers(id.toString());
-    const found = usersStore.users.find(u => u.id === id);
-    if (found) {
-      user.value = found;
-    } else {
-      errorUser.value = 'Пользователь не найден';
-    }
-  } catch (err) {
-    errorUser.value = 'Ошибка загрузки пользователя';
-    console.error(err);
-  } finally {
+  // Ищем текущего пользователя в уже загруженном списке
+  const foundUser = usersStore.users.find(u => u.id === id);
+  if (foundUser) {
+    user.value = foundUser;
+  } else {
+    // Если пользователя нет в списке (возможно, он новый), пытаемся загрузить через поиск,
+    // но при этом не перезаписываем весь список, а добавляем найденного.
+    // Для этого можно использовать специальный метод, если он есть, или просто показать ошибку.
+    // Как вариант — сделать запрос к эндпоинту /users/{id}, если он существует.
+    // Для простоты покажем ошибку.
+    errorUser.value = 'Пользователь не найден';
     loadingUser.value = false;
+    loadingProjects.value = false;
+    return;
   }
+  loadingUser.value = false;
 
+  // Загружаем проекты пользователя
   try {
     const response = await fetch(`${baseUrl}/projects/?author_id=${id}`);
     if (response.ok) {
@@ -169,6 +180,16 @@ const getAuthorNickname = (id: number): string => {
   return u ? u.nickname : `ID: ${id}`;
 };
 
+const getAuthorAvatar = (id: number): string | undefined => {
+  const u = usersStore.users.find(u => u.id === id);
+  return u?.avatar ? `${baseUrl}/avatars/${u.avatar}` : undefined;
+};
+
+const getAuthorInitials = (id: number): string => {
+  const u = usersStore.users.find(u => u.id === id);
+  return u?.nickname?.charAt(0).toUpperCase() || '?';
+};
+
 const goToProject = (projectId: number) => {
   router.push(`/project/${projectId}`);
 };
@@ -182,8 +203,8 @@ const goHome = () => {
 };
 </script>
 
+
 <style scoped>
-/* Стили без изменений — оставляем как в вашем файле */
 .user-details-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -406,28 +427,76 @@ const goHome = () => {
 }
 
 .authors-list {
-  display: inline;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
 }
 
 .author-item {
-  display: inline;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
 }
 
-.author-link {
-  cursor: pointer;
+.author-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.author-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: var(--button-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.author-avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.author-name {
   color: var(--link-color);
   text-decoration: underline;
+  font-size: 0.9rem;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  display: inline-block;
-  max-width: 100%;
+  max-width: 100px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.author-link:hover {
+.author-item:hover .author-name {
   color: var(--link-hover);
+}
+
+.separator {
+  color: var(--text-secondary);
+  margin-left: 2px;
 }
 
 .loading, .error, .no-projects {

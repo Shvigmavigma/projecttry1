@@ -29,17 +29,26 @@
         <p class="card-description">{{ project.body.slice(0, 150) }}...</p>
         <div class="card-footer">
           <span class="authors-label">Авторы:</span>
-          <span class="authors-list">
-            <span
+          <div class="authors-list">
+            <div
               v-for="(authorId, index) in project.authors_ids"
               :key="authorId"
-              class="author-link"
+              class="author-item"
               @click.stop="goToUser(authorId)"
             >
-              {{ getAuthorNickname(authorId) }}
-              <span v-if="index < project.authors_ids.length - 1">, </span>
-            </span>
-          </span>
+              <div class="author-avatar">
+                <img
+                  v-if="getAuthorAvatar(authorId) && !authorImageError[authorId]"
+                  :src="getAuthorAvatar(authorId)"
+                  :alt="getAuthorNickname(authorId)"
+                  @error="authorImageError[authorId] = true"
+                />
+                <span v-else>{{ getAuthorInitials(authorId) }}</span>
+              </div>
+              <span class="author-name">{{ getAuthorNickname(authorId) }}</span>
+              <span v-if="index < project.authors_ids.length - 1" class="separator">,</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -59,6 +68,10 @@ const usersStore = useUsersStore();
 const projects = ref<Project[]>([]);
 const search = ref('');
 const loading = ref(true);
+const authorImageError = ref<Record<number, boolean>>({});
+
+// Базовый URL бэкенда (при необходимости замените на переменную окружения)
+const baseUrl = 'http://localhost:8000';
 
 onMounted(async () => {
   if (usersStore.users.length === 0) {
@@ -70,8 +83,9 @@ onMounted(async () => {
 async function fetchAll() {
   loading.value = true;
   try {
-    const res = await axios.get<Project[]>('http://localhost:8000/projects/');
+    const res = await axios.get<Project[]>(`${baseUrl}/projects/`);
     projects.value = res.data;
+    authorImageError.value = {};
   } catch (error) {
     console.error('Error fetching projects:', error);
   } finally {
@@ -86,10 +100,11 @@ async function searchProjects() {
   }
   loading.value = true;
   try {
-    const res = await axios.get<Project[]>('http://localhost:8000/search', {
+    const res = await axios.get<Project[]>(`${baseUrl}/search`, {
       params: { q: search.value }
     });
     projects.value = res.data;
+    authorImageError.value = {};
   } catch (error) {
     console.error('Error searching projects:', error);
   } finally {
@@ -100,6 +115,16 @@ async function searchProjects() {
 function getAuthorNickname(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
   return user ? user.nickname : `ID: ${id}`;
+}
+
+function getAuthorAvatar(id: number): string | undefined {
+  const user = usersStore.users.find(u => u.id === id);
+  return user?.avatar ? `${baseUrl}/avatars/${user.avatar}` : undefined;
+}
+
+function getAuthorInitials(id: number): string {
+  const user = usersStore.users.find(u => u.id === id);
+  return user?.nickname?.charAt(0).toUpperCase() || '?';
 }
 
 function goToProject(id: number) {
@@ -263,25 +288,81 @@ function goHome() {
 .authors-label {
   font-weight: 500;
   color: var(--text-secondary);
+  margin-right: 4px;
+  flex-shrink: 0;
 }
 
 .authors-list {
-  display: inline;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
 }
 
-.author-link {
+.author-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.author-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.author-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: var(--button-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.author-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.author-avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.author-name {
   color: var(--link-color);
   text-decoration: underline;
+  font-size: 0.9rem;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  display: inline-block;
-  max-width: 100%;
+  max-width: 100px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.author-link:hover {
+.author-item:hover .author-name {
   color: var(--link-hover);
+}
+
+.separator {
+  color: var(--text-secondary);
+  margin-left: 2px;
 }
 
 .loading, .no-projects {
