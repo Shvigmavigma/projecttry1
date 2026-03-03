@@ -26,3 +26,4 @@ class Project(Base):
     underbody = Column(String, default="")
     authors_ids = Column(JSON, nullable=False, default=list) 
     tasks = Column(JSON, default=list)
+    links=Column(JSON, default=dict)

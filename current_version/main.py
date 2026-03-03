@@ -289,6 +289,8 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
         project.underbody = project_update.underbody
     if project_update.tasks is not None:
         project.tasks = project_update.tasks
+    if project_update.links is not None:
+        project.links = project_update.links
 
     if project_update.authors_ids is not None:
         users = db.query(User).filter(User.id.in_(project_update.authors_ids)).all()

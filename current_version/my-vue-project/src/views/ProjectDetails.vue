@@ -56,6 +56,73 @@
               <h3>Дополнительно</h3>
               <p>{{ project.underbody }}</p>
             </div>
+
+            <!-- Блок ссылок проекта (только для авторов) -->
+            <div class="project-links">
+              <h3>Ссылки проекта</h3>
+              <div class="links-buttons">
+                <!-- GitHub -->
+                <template v-if="project.links?.github">
+                  <a
+                    :href="project.links.github"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="link-button github-link"
+                  >
+                    <img :src="githubIcon" alt="GitHub" class="icon" />
+                    GitHub репозиторий
+                  </a>
+                </template>
+                <template v-else>
+                  <div v-if="showGithubInput" class="link-input-wrapper">
+                    <input
+                      v-model="githubInput"
+                      type="url"
+                      placeholder="https://github.com/..."
+                      class="link-input"
+                      @keyup.enter="saveGithubLink"
+                    />
+                    <button class="link-save" @click="saveGithubLink">✔</button>
+                    <button class="link-cancel" @click="cancelGithub">✖</button>
+                  </div>
+                  <button v-else class="link-button add-github" @click="showGithubInput = true">
+                    <img :src="githubIcon" alt="GitHub" class="icon" />
+                    + Добавить GitHub
+                  </button>
+                </template>
+
+                <!-- Google Drive -->
+                <template v-if="project.links?.google_drive">
+                  <a
+                    :href="project.links.google_drive"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="link-button drive-link"
+                  >
+                    <img :src="driveIcon" alt="Google Drive" class="icon" />
+                    Google Диск
+                  </a>
+                </template>
+                <template v-else>
+                  <div v-if="showDriveInput" class="link-input-wrapper">
+                    <input
+                      v-model="driveInput"
+                      type="url"
+                      placeholder="https://drive.google.com/..."
+                      class="link-input"
+                      @keyup.enter="saveDriveLink"
+                    />
+                    <button class="link-save" @click="saveDriveLink">✔</button>
+                    <button class="link-cancel" @click="cancelDrive">✖</button>
+                  </div>
+                  <button v-else class="link-button add-drive" @click="showDriveInput = true">
+                    <img :src="driveIcon" alt="Google Drive" class="icon" />
+                    + Добавить Google Диск
+                  </button>
+                </template>
+              </div>
+            </div>
+
             <div class="project-section">
               <h3>Авторы</h3>
               <div v-if="authors.length" class="authors-list">
@@ -155,6 +222,13 @@ import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import type { Project, User, Task } from '@/types';
+import axios from 'axios';
+
+// Импорт иконок (после переименования)
+import githubIcon from '@/assets/icons/icons8-github-30.png';
+import driveIcon from '@/assets/icons/icons8-google-drive-48.png';
+
+const baseUrl = 'http://localhost:8000';
 
 const route = useRoute();
 const router = useRouter();
@@ -166,6 +240,12 @@ const project = ref<Project | null>(null);
 const loading = ref(true);
 const error = ref('');
 const authors = ref<User[]>([]);
+
+// Состояния для ввода ссылок
+const showGithubInput = ref(false);
+const githubInput = ref('');
+const showDriveInput = ref(false);
+const driveInput = ref('');
 
 const isAuthor = computed(() => {
   if (!authStore.userId || !project.value) return false;
@@ -397,6 +477,46 @@ const goToTask = (task: Task) => {
     router.push(`/project/${route.params.id}/task/${index}`);
   }
 };
+
+// --- Функции для работы со ссылками ---
+async function updateProjectLinks(updates: Partial<NonNullable<Project['links']>>) {
+  if (!project.value) return;
+  try {
+    const newLinks = { ...(project.value.links || {}), ...updates };
+    await axios.put(`${baseUrl}/projects/${project.value.id}`, { links: newLinks });
+    // обновляем локальный объект
+    project.value.links = newLinks;
+  } catch (err) {
+    console.error('Failed to update links', err);
+    alert('Ошибка при сохранении ссылки');
+  }
+}
+
+function saveGithubLink() {
+  if (githubInput.value.trim()) {
+    updateProjectLinks({ github: githubInput.value.trim() });
+  }
+  showGithubInput.value = false;
+  githubInput.value = '';
+}
+
+function cancelGithub() {
+  showGithubInput.value = false;
+  githubInput.value = '';
+}
+
+function saveDriveLink() {
+  if (driveInput.value.trim()) {
+    updateProjectLinks({ google_drive: driveInput.value.trim() });
+  }
+  showDriveInput.value = false;
+  driveInput.value = '';
+}
+
+function cancelDrive() {
+  showDriveInput.value = false;
+  driveInput.value = '';
+}
 
 // --- УДАЛЕНИЕ ПРОЕКТА ---
 const deleteProject = async () => {
@@ -855,6 +975,140 @@ const goToUser = (userId: number) => {
 
 .delete-project-button:hover {
   background: var(--danger-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+
+/* Стили для блока ссылок проекта */
+.project-links {
+  margin-bottom: 28px;
+}
+
+.project-links h3 {
+  color: var(--heading-color);
+  margin-bottom: 10px;
+  font-weight: 500;
+}
+
+.links-buttons {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.link-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 16px;
+  border-radius: 50px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid transparent;
+}
+
+.link-button .icon {
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  object-fit: contain;
+}
+
+/* Кнопки добавления */
+.add-github,
+.add-drive {
+  background: var(--bg-card);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.add-github:hover,
+.add-drive:hover {
+  background: var(--bg-page);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+
+/* Поле ввода ссылки */
+.link-input-wrapper {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 50px;
+  padding: 4px 4px 4px 12px;
+}
+
+.link-input {
+  flex: 1;
+  min-width: 200px;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  outline: none;
+}
+
+.link-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.link-save,
+.link-cancel {
+  background: transparent;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 50%;
+  transition: background 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.link-save {
+  color: #4caf50;
+}
+
+.link-save:hover {
+  background: rgba(76, 175, 80, 0.2);
+}
+
+.link-cancel {
+  color: #f44336;
+}
+
+.link-cancel:hover {
+  background: rgba(244, 67, 54, 0.2);
+}
+
+/* Ссылки (когда уже есть) */
+.github-link {
+  background: #4285f4;
+  
+  color: white;
+}
+
+.github-link:hover {
+  background: #2c3e50;
+  
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+
+.drive-link {
+  background: #24292e;
+  color: white;
+}
+
+.drive-link:hover {
+  
+  background: #2c3e50;
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
 }

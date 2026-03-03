@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, JSON
+from sqlalchemy import create_engine, Column, Integer, String, Float, ForeignKey, JSON, text
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
@@ -10,5 +10,4 @@ session_local = sessionmaker( autoflush=False, autocommit=False, bind=engine)
 
 
 Base = declarative_base()
-
 

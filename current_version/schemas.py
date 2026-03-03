@@ -64,6 +64,10 @@ class ProjectBase(BaseModel):
             ]
         }
     )
+    links: Optional[Dict[str, str]] = Field(
+        default=None,
+        json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
+    )
 
 class ProjectCreate(ProjectBase):
     authors_ids: List[int] = Field(..., description="Список ID всех авторов")
@@ -80,3 +84,7 @@ class ProjectUpdate(BaseModel):
     tasks: Optional[List[Dict[str, Any]]] = None
     authors_ids: Optional[List[int]] = Field(None, description="Полный список ID авторов") 
     author_id: Optional[int] = Field(None, description="ID автора для добавления к существующему списку")
+    links: Optional[Dict[str, str]] = Field(
+        default=None,
+        json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
+    )

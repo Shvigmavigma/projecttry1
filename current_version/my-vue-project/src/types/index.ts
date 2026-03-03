@@ -22,7 +22,8 @@ export interface Task {
   timeline?: string;
   timelinend?: string;
   progress?: number;   
-  subtasks?: SubTask[]; 
+  subtasks?: SubTask[];
+
 }
 
 export interface Project {
@@ -32,6 +33,7 @@ export interface Project {
   underbody: string;
   authors_ids: number[];
   tasks: Task[];
+  links?: ProjectLinks;
 }
 
 export type ProjectCreate = Omit<Project, 'id'>;
@@ -42,4 +44,9 @@ export interface ProjectUpdate {
   underbody?: string;
   tasks?: Task[];
   author_id?: number;
+}
+export interface ProjectLinks {
+  github?: string;
+  google_drive?: string;
+
 }
