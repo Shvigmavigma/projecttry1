@@ -124,7 +124,12 @@
       <!-- Кнопки действий -->
       <section class="action-buttons">
         <div v-if="task.status !== 'выполнена'">
-          <button class="complete-button" @click="completeTask" :disabled="actionInProgress">
+          <button 
+            class="complete-button" 
+            @click="completeTask" 
+            :disabled="actionInProgress || totalProgress < 100"
+            :title="totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : ''"
+          >
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
           </button>
         </div>

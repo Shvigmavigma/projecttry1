@@ -12,6 +12,8 @@ class UserBase(BaseModel):
     )
     speciality: Optional[str] = None
     email: EmailStr
+    avatar: Optional[str] = None 
+
 
 class UserResponse(UserBase):
     id: int
@@ -33,6 +35,7 @@ class UserUpdate(BaseModel):
     email: Optional[EmailStr] = None
     class_: Optional[float] = Field(None, alias="class") 
     speciality: Optional[str] = None
+    avatar: Optional[str] = None 
 
     model_config = ConfigDict(populate_by_name=True)
 # ---------- Teacher ----------

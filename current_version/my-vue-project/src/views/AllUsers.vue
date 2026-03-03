@@ -25,7 +25,15 @@
         class="user-card"
         @click="goToUser(user.id)"
       >
-        <div class="user-avatar">{{ user.nickname.charAt(0).toUpperCase() }}</div>
+        <div class="user-avatar">
+          <img
+            v-if="user.avatar && !imageError[user.id]"
+            :src="avatarUrl(user.avatar)"
+            :alt="user.nickname"
+            @error="imageError[user.id] = true"
+          />
+          <span v-else>{{ user.nickname.charAt(0).toUpperCase() }}</span>
+        </div>
         <h3 class="user-nickname">{{ user.nickname }}</h3>
         <p class="user-fullname">{{ user.fullname }}</p>
         <p class="user-email">{{ user.email }}</p>
@@ -48,6 +56,13 @@ const usersStore = useUsersStore();
 const users = ref<User[]>([]);
 const search = ref('');
 const loading = ref(true);
+const imageError = ref<Record<number, boolean>>({});
+
+// Базовый URL бэкенда (при необходимости замените на переменную окружения)
+const baseUrl = 'http://localhost:8000';
+
+// Функция для формирования полного URL аватарки
+const avatarUrl = (avatar: string) => `${baseUrl}/avatars/${avatar}`;
 
 onMounted(async () => {
   await loadUsers();
@@ -57,6 +72,7 @@ async function loadUsers() {
   loading.value = true;
   await usersStore.fetchAllUsers();
   users.value = usersStore.users;
+  imageError.value = {};
   loading.value = false;
 }
 
@@ -68,6 +84,7 @@ async function searchUsers() {
     await usersStore.fetchAllUsers();
   }
   users.value = usersStore.users;
+  imageError.value = {};
   loading.value = false;
 }
 
@@ -206,6 +223,22 @@ function goHome() {
   font-size: 24px;
   font-weight: bold;
   margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 .user-nickname {

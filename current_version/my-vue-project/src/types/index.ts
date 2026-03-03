@@ -2,11 +2,11 @@ export interface User {
   id: number;
   nickname: string;
   fullname: string;
-  class: number;          // поле class_ сериализуется как class
-  speciality: string | null;
+  class: number;
+  speciality?: string;
   email: string;
+  avatar?: string;
 }
-
 export interface SubTask {
   id: string;         
   title: string;

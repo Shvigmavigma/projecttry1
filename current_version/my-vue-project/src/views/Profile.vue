@@ -1,19 +1,24 @@
 <template>
   <div class="profile-page">
-    <!-- Кнопки в правом верхнем углу -->
     <div class="header-actions">
       <ThemeToggle />
       <button class="home-button" @click="goToMain" title="Главное меню">🏠</button>
     </div>
 
     <div class="profile-card">
-      <!-- Заголовок с иконкой -->
       <div class="profile-header">
-        <span class="avatar">👤</span>
+        <div class="avatar" @click="openAvatarModal" :class="{ clickable: user?.avatar }">
+          <img
+            v-if="user?.avatar && !avatarError"
+            :src="avatarUrl"
+            :alt="user.nickname"
+            @error="avatarError = true"
+          />
+          <span v-else>{{ user?.nickname?.charAt(0).toUpperCase() || '?' }}</span>
+        </div>
         <h2>Личный кабинет</h2>
       </div>
 
-      <!-- Информация о пользователе -->
       <div v-if="user" class="profile-info">
         <div class="info-row">
           <span class="info-label">Никнейм</span>
@@ -37,29 +42,47 @@
         </div>
       </div>
 
-      <!-- Заглушка, если пользователь не загружен -->
       <div v-else class="loading">
         Загрузка данных...
       </div>
 
-      <!-- Кнопка редактирования -->
       <button class="edit-button" @click="editProfile">Редактировать профиль</button>
-
-      <!-- Кнопка выхода -->
       <button class="logout-button" @click="logout">Выйти</button>
     </div>
+
+    <AvatarModal
+      :show="showAvatarModal"
+      :src="avatarUrl"
+      :alt="user?.nickname"
+      @close="showAvatarModal = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import AvatarModal from '@/components/AvatarModal.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const user = computed(() => authStore.user);
+const avatarError = ref(false);
+const showAvatarModal = ref(false);
+
+// Явно указываем адрес бэкенда (при необходимости замените на переменную окружения позже)
+const avatarUrl = computed(() => {
+  if (!user.value?.avatar) return '';
+  return `http://localhost:8000/avatars/${user.value.avatar}`;
+});
+
+const openAvatarModal = () => {
+  if (user.value?.avatar && !avatarError.value) {
+    showAvatarModal.value = true;
+  }
+};
 
 const editProfile = () => {
   router.push('/profile/edit');
@@ -90,7 +113,6 @@ const logout = () => {
   transition: background 0.3s;
 }
 
-/* Контейнер для кнопок в правом верхнем углу */
 .header-actions {
   position: absolute;
   top: 30px;
@@ -145,15 +167,40 @@ const logout = () => {
 }
 
 .avatar {
-  font-size: 48px;
-  background: var(--bg-page);
   width: 80px;
   height: 80px;
+  background: var(--bg-page);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   color: var(--heading-color);
+  overflow: hidden;
+  font-size: 48px;
+  transition: opacity 0.2s;
+}
+
+.avatar.clickable {
+  cursor: pointer;
+}
+
+.avatar.clickable:hover {
+  opacity: 0.8;
+}
+
+.avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 .profile-header h2 {

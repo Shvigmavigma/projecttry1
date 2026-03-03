@@ -11,7 +11,16 @@
     <div v-if="loadingUser" class="loading">Загрузка данных пользователя...</div>
     <div v-else-if="errorUser" class="error">{{ errorUser }}</div>
     <div v-else-if="user" class="user-info-card">
-      <div class="user-avatar">{{ user.nickname.charAt(0).toUpperCase() }}</div>
+      <!-- Аватарка кликабельна, если есть -->
+      <div class="user-avatar" @click="openAvatarModal" :class="{ clickable: user.avatar }">
+        <img
+          v-if="user.avatar && !avatarError"
+          :src="avatarUrl"
+          :alt="user.nickname"
+          @error="avatarError = true"
+        />
+        <span v-else>{{ user.nickname.charAt(0).toUpperCase() }}</span>
+      </div>
       <h2 class="user-nickname">{{ user.nickname }}</h2>
       <p class="user-fullname">{{ user.fullname }}</p>
       <p class="user-email">{{ user.email }}</p>
@@ -50,14 +59,23 @@
         </div>
       </div>
     </div>
+
+    <!-- Модальное окно для аватарки -->
+    <AvatarModal
+      :show="showAvatarModal"
+      :src="avatarUrl"
+      :alt="user?.nickname"
+      @close="showAvatarModal = false"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, watch } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import AvatarModal from '@/components/AvatarModal.vue';
 import type { User, Project } from '@/types';
 
 const route = useRoute();
@@ -69,19 +87,34 @@ const projects = ref<Project[]>([]);
 const loadingUser = ref(true);
 const loadingProjects = ref(true);
 const errorUser = ref('');
+const avatarError = ref(false);
+const showAvatarModal = ref(false);
+
+// Базовый URL бэкенда (можно вынести в переменные окружения)
+const baseUrl = 'http://localhost:8000';
+
+const avatarUrl = computed(() => {
+  if (!user.value?.avatar) return '';
+  return `${baseUrl}/avatars/${user.value.avatar}`;
+});
+
+const openAvatarModal = () => {
+  if (user.value?.avatar && !avatarError.value) {
+    showAvatarModal.value = true;
+  }
+};
 
 // Функция загрузки данных пользователя и его проектов
 const loadUserData = async (id: number) => {
   loadingUser.value = true;
   loadingProjects.value = true;
   errorUser.value = '';
+  avatarError.value = false;
 
-  // Загружаем всех пользователей один раз для получения никнеймов
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
 
-  // Загружаем данные пользователя через поиск по ID
   try {
     await usersStore.searchUsers(id.toString());
     const found = usersStore.users.find(u => u.id === id);
@@ -97,9 +130,8 @@ const loadUserData = async (id: number) => {
     loadingUser.value = false;
   }
 
-  // Загружаем проекты пользователя
   try {
-    const response = await fetch(`http://localhost:8000/projects/?author_id=${id}`);
+    const response = await fetch(`${baseUrl}/projects/?author_id=${id}`);
     if (response.ok) {
       projects.value = await response.json();
     } else {
@@ -112,7 +144,6 @@ const loadUserData = async (id: number) => {
   }
 };
 
-// Первоначальная загрузка при монтировании
 onMounted(async () => {
   const id = Number(route.params.id);
   if (!isNaN(id)) {
@@ -123,7 +154,6 @@ onMounted(async () => {
   }
 });
 
-// Следим за изменением параметра маршрута (переход на другого пользователя)
 watch(() => route.params.id, async (newId) => {
   const id = Number(newId);
   if (!isNaN(id)) {
@@ -153,6 +183,7 @@ const goHome = () => {
 </script>
 
 <style scoped>
+/* Стили без изменений — оставляем как в вашем файле */
 .user-details-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -232,6 +263,31 @@ const goHome = () => {
   font-size: 36px;
   font-weight: bold;
   margin: 0 auto 16px;
+  overflow: hidden;
+  transition: opacity 0.2s;
+}
+
+.user-avatar.clickable {
+  cursor: pointer;
+}
+
+.user-avatar.clickable:hover {
+  opacity: 0.8;
+}
+
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.user-avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
 .user-nickname {

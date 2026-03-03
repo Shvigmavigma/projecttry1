@@ -10,6 +10,29 @@
 
     <div v-if="loading" class="loading">Загрузка...</div>
     <div v-else class="edit-card">
+      <!-- Секция аватарки -->
+      <div class="avatar-section">
+        <div class="avatar-preview">
+          <img
+            v-if="previewAvatar || (authStore.user?.avatar && !avatarError)"
+            :src="previewAvatar || `http://localhost:8000/avatars/${authStore.user?.avatar}`"
+            :alt="authStore.user?.nickname"
+            @error="avatarError = true"
+          />
+          <span v-else>{{ authStore.user?.nickname?.charAt(0).toUpperCase() || '?' }}</span>
+        </div>
+        <label class="avatar-upload-label">
+          <input
+            type="file"
+            accept="image/*"
+            @change="handleAvatarUpload"
+            :disabled="uploading"
+          />
+          <span class="upload-button">{{ uploading ? 'Загрузка...' : 'Загрузить аватар' }}</span>
+        </label>
+        <div v-if="uploadError" class="upload-error">{{ uploadError }}</div>
+      </div>
+
       <form @submit.prevent="handleSave">
         <div class="form-group">
           <label for="fullname">Полное имя</label>
@@ -86,6 +109,12 @@ const loading = ref(true);
 const saving = ref(false);
 const errorMessage = ref('');
 
+// Для аватарки
+const uploading = ref(false);
+const uploadError = ref('');
+const previewAvatar = ref<string | null>(null);
+const avatarError = ref(false);
+
 onMounted(() => {
   if (authStore.user) {
     form.value = {
@@ -97,6 +126,52 @@ onMounted(() => {
   }
   loading.value = false;
 });
+
+const handleAvatarUpload = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  if (!input.files || input.files.length === 0) return;
+
+  const file = input.files[0];
+  // Проверка размера (max 5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    uploadError.value = 'Файл слишком большой (макс. 5 МБ)';
+    return;
+  }
+
+  // Предпросмотр
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    previewAvatar.value = e.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+
+  uploading.value = true;
+  uploadError.value = '';
+
+  const formData = new FormData();
+  formData.append('file', file);
+
+  try {
+    const response = await axios.post(
+      `http://localhost:8000/users/${authStore.user!.id}/avatar`,
+      formData,
+      {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      }
+    );
+    // Обновляем данные пользователя
+    authStore.user = response.data;
+    localStorage.setItem('user', JSON.stringify(response.data));
+    previewAvatar.value = null; // убираем предпросмотр, т.к. теперь используем реальный URL
+    avatarError.value = false;
+  } catch (error: any) {
+    console.error('Error uploading avatar:', error);
+    uploadError.value = error.response?.data?.detail || 'Ошибка загрузки аватарки';
+    previewAvatar.value = null; // сброс предпросмотра при ошибке
+  } finally {
+    uploading.value = false;
+  }
+};
 
 const handleSave = async () => {
   if (!authStore.user) return;
@@ -198,6 +273,74 @@ const goHome = () => {
   max-width: 500px;
   margin: 0 auto;
   transition: background 0.3s;
+}
+
+/* Секция аватарки */
+.avatar-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 30px;
+}
+
+.avatar-preview {
+  width: 100px;
+  height: 100px;
+  background: var(--accent-color);
+  color: var(--button-text);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 36px;
+  font-weight: bold;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.avatar-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.avatar-preview span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.avatar-upload-label {
+  cursor: pointer;
+}
+
+.avatar-upload-label input {
+  display: none;
+}
+
+.upload-button {
+  display: inline-block;
+  padding: 10px 20px;
+  background-color: var(--accent-color);
+  color: var(--button-text);
+  border-radius: 50px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 0.2s;
+}
+
+.upload-button:hover {
+  background-color: var(--accent-hover);
+}
+
+.upload-error {
+  color: var(--danger-color);
+  font-size: 0.9rem;
+  margin-top: 8px;
+  text-align: center;
 }
 
 .form-group {

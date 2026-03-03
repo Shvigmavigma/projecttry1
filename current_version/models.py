@@ -13,6 +13,7 @@ class User(Base):
     class_ = Column(Float, default=0.0)
     speciality = Column(String, nullable=True)
     email = Column(String, nullable=False, index=True)
+    avatar = Column(String, nullable=True)
 
 
 

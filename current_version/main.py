@@ -1,10 +1,10 @@
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import FastAPI, HTTPException, Query, Depends, File, UploadFile
 import uvicorn
 from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, text
 from fastapi.middleware.cors import CORSMiddleware
-
+from pathlib import Path
 from models import Base, User, Project
 from database import engine, session_local
 from schemas import (
@@ -12,6 +12,15 @@ from schemas import (
     ProjectResponse, ProjectCreate, ProjectUpdate,
     TeacherCreate, TeacherResponse, LoginRequest, UserUpdate
 )
+from willow import Image
+import os
+from fastapi.staticfiles import StaticFiles
+import uuid
+import os
+from io import BytesIO
+import io
+from willow import Image
+import uuid
 
 app = FastAPI()
 
@@ -35,6 +44,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+os.makedirs("avatars", exist_ok=True)
+app.mount("/avatars", StaticFiles(directory="avatars"), name="avatars")
+AVATAR_DIR = "avatars" 
+
+def delete_avatar_file(avatar_filename: str):
+    """Удаляет файл аватарки, если он существует."""
+    if not avatar_filename:
+        return
+    filepath = os.path.join(AVATAR_DIR, avatar_filename)
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+        except OSError as e:
+            print(f"Ошибка при удалении файла {filepath}: {e}")
 
 Base.metadata.create_all(bind=engine)
 
@@ -128,41 +151,91 @@ async def search_users(
 @app.delete("/users/all", summary="Удалить всех пользователей", tags=["USERDB"])
 async def delete_all_users(db: Session = Depends(get_db)):
     """
-    Удаляет всех пользователей из базы данных.
-    Перед удалением во всех проектах поле authors_ids принудительно устанавливается в пустой массив '[]',
-    чтобы полностью убрать ссылки на удаляемых пользователей.
+    Удаляет всех пользователей и все связанные с ними аватарки.
+    Перед удалением во всех проектах поле authors_ids принудительно устанавливается в пустой массив '[]'.
     """
+    users = db.query(User).all()
+    for user in users:
+        if user.avatar:
+            delete_avatar_file(user.avatar)
     db.execute(text("UPDATE projects SET authors_ids = '[]'"))
 
     deleted_count = db.query(User).delete()
-    
     db.commit()
-    return {
-        "message": f"Удалено пользователей: {deleted_count}",
-    }
 
-
+    return {"message": f"Удалено пользователей: {deleted_count}"}
 
 @app.delete("/users/{user_id}", summary="Удалить пользователя по ID", tags=["USERDB"])
 async def delete_user(user_id: int, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+
+    if user.avatar:
+        delete_avatar_file(user.avatar)
     all_projects = db.query(Project).all()
-    projects_with_user = [p for p in all_projects if user_id in (p.authors_ids or [])]
-
-    for project in projects_with_user:
-        if user_id in project.authors_ids:
-
-            x=list(project.authors_ids)
-            x.remove(user_id)
-            project.authors_ids=x
-
+    for project in all_projects:
+        if user_id in (project.authors_ids or []):
+            authors = list(project.authors_ids)
+            authors.remove(user_id)
+            project.authors_ids = authors
     db.delete(user)
     db.commit()
+
     return {"message": f"User {user_id} deleted successfully and removed from projects authors"}
 
+@app.post("/users/{user_id}/avatar", response_model=UserResponse, tags=["USERDB"])
+async def upload_avatar(
+    user_id: int,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db)
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
 
+    if not file.content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5 MB)")
+
+    try:
+        img = Image.open(io.BytesIO(contents))
+
+        width, height = img.get_size()
+        crop_size = min(width, height)
+        left = (width - crop_size) // 2
+        top = (height - crop_size) // 2
+        right = left + crop_size
+        bottom = top + crop_size
+        img = img.crop((left, top, right, bottom))
+
+        img = img.resize((256, 256))
+
+        unique_id = uuid.uuid4().hex[:8]
+        filename = f"user_{user_id}_{unique_id}.webp"
+        filepath = os.path.join("avatars", filename)
+
+        # Сохраняем через Willow, передавая путь к файлу
+        img.save_as_webp(filepath)
+
+        if user.avatar:
+            old_path = os.path.join("avatars", user.avatar)
+            if os.path.exists(old_path):
+                os.remove(old_path)
+
+        user.avatar = filename
+        db.commit()
+        db.refresh(user)
+
+        return user
+
+    except Exception as e:
+        if 'filepath' in locals() and os.path.exists(filepath):
+            os.remove(filepath)
+        raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
 # ---------- PROJECTS ----------
 @app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["PROJECTDB"])
 async def create_project(project: ProjectCreate, db: Session = Depends(get_db)):
