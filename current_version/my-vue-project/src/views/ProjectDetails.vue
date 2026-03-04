@@ -982,11 +982,10 @@ const goToUser = (userId: number) => {
 .gantt-text {
   position: relative;
   z-index: 1;
-  color: var(--text-primary);
+  color: black;
   font-size: 0.85rem;
   font-weight: 500;
   background-color: transparent;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5);
 }
 
 .light-theme .gantt-text {
