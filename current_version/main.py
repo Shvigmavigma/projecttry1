@@ -48,16 +48,7 @@ os.makedirs("avatars", exist_ok=True)
 app.mount("/avatars", StaticFiles(directory="avatars"), name="avatars")
 AVATAR_DIR = "avatars" 
 
-def delete_avatar_file(avatar_filename: str):
-    """Удаляет файл аватарки, если он существует."""
-    if not avatar_filename:
-        return
-    filepath = os.path.join(AVATAR_DIR, avatar_filename)
-    if os.path.exists(filepath):
-        try:
-            os.remove(filepath)
-        except OSError as e:
-            print(f"Ошибка при удалении файла {filepath}: {e}")
+
 
 Base.metadata.create_all(bind=engine)
 
@@ -157,7 +148,15 @@ async def delete_all_users(db: Session = Depends(get_db)):
     users = db.query(User).all()
     for user in users:
         if user.avatar:
-            delete_avatar_file(user.avatar)
+            """Удаляет файл аватарки, если он существует."""
+            if not user.avatar:
+                return
+            filepath = os.path.join(AVATAR_DIR, user.avatar)
+            if os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except OSError as e:
+                    print(f"Ошибка при удалении файла {filepath}: {e}")
     db.execute(text("UPDATE projects SET authors_ids = '[]'"))
 
     deleted_count = db.query(User).delete()
@@ -172,7 +171,15 @@ async def delete_user(user_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="User not found")
 
     if user.avatar:
-        delete_avatar_file(user.avatar)
+        """Удаляет файл аватарки, если он существует."""
+        if not user.avatar:
+            return
+        filepath = os.path.join(AVATAR_DIR, user.avatar)
+        if os.path.exists(filepath):
+            try:
+                os.remove(filepath)
+            except OSError as e:
+                print(f"Ошибка при удалении файла {filepath}: {e}")
     all_projects = db.query(Project).all()
     for project in all_projects:
         if user_id in (project.authors_ids or []):
@@ -218,7 +225,6 @@ async def upload_avatar(
         filename = f"user_{user_id}_{unique_id}.webp"
         filepath = os.path.join("avatars", filename)
 
-        # Сохраняем через Willow, передавая путь к файлу
         img.save_as_webp(filepath)
 
         if user.avatar:

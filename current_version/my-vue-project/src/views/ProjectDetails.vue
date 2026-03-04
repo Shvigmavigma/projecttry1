@@ -1087,7 +1087,6 @@ const goToUser = (userId: number) => {
   background: rgba(244, 67, 54, 0.2);
 }
 
-/* Ссылки (когда уже есть) */
 .github-link {
   background: #4285f4;
   
