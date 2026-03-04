@@ -56,11 +56,10 @@
 
         <div class="form-group">
           <label for="class">Класс</label>
-          <input
+          <ClassInput
             id="class"
-            v-model.number="form.class"
-            type="number"
-            step="0.1"
+            v-model="form.class"
+            placeholder="3.1 – 11.6"
           />
         </div>
 
@@ -94,6 +93,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import axios from 'axios';
+import ClassInput from '@/components/ClassInput.vue';
 
 const authStore = useAuthStore();
 const router = useRouter();

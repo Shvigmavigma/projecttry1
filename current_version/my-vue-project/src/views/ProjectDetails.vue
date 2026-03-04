@@ -63,16 +63,36 @@
               <div class="links-buttons">
                 <!-- GitHub -->
                 <template v-if="project.links?.github">
-                  <a
-                    :href="project.links.github"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="link-button github-link"
-                  >
-                    <img :src="githubIcon" alt="GitHub" class="icon" />
-                    GitHub репозиторий
-                  </a>
+                  <!-- Режим отображения существующей ссылки с кнопками редактирования/удаления -->
+                  <div v-if="!showEditGithub" class="link-display">
+                    <a
+                      :href="project.links.github"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="link-button github-link"
+                    >
+                      <img :src="githubIcon" alt="GitHub" class="icon" />
+                      GitHub репозиторий
+                    </a>
+                    <div class="link-actions">
+                      <button class="link-edit" @click="startEditGithub" title="Редактировать">✎</button>
+                      <button class="link-delete" @click="deleteGithubLink" title="Удалить">✖</button>
+                    </div>
+                  </div>
+                  <!-- Режим редактирования существующей ссылки -->
+                  <div v-else class="link-input-wrapper">
+                    <input
+                      v-model="githubEditValue"
+                      type="url"
+                      placeholder="https://github.com/..."
+                      class="link-input"
+                      @keyup.enter="saveEditGithub"
+                    />
+                    <button class="link-save" @click="saveEditGithub">✔</button>
+                    <button class="link-cancel" @click="cancelEditGithub">✖</button>
+                  </div>
                 </template>
+                <!-- Добавление новой ссылки GitHub -->
                 <template v-else>
                   <div v-if="showGithubInput" class="link-input-wrapper">
                     <input
@@ -93,15 +113,32 @@
 
                 <!-- Google Drive -->
                 <template v-if="project.links?.google_drive">
-                  <a
-                    :href="project.links.google_drive"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="link-button drive-link"
-                  >
-                    <img :src="driveIcon" alt="Google Drive" class="icon" />
-                    Google Диск
-                  </a>
+                  <div v-if="!showEditDrive" class="link-display">
+                    <a
+                      :href="project.links.google_drive"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="link-button drive-link"
+                    >
+                      <img :src="driveIcon" alt="Google Drive" class="icon" />
+                      Google Диск
+                    </a>
+                    <div class="link-actions">
+                      <button class="link-edit" @click="startEditDrive" title="Редактировать">✎</button>
+                      <button class="link-delete" @click="deleteDriveLink" title="Удалить">✖</button>
+                    </div>
+                  </div>
+                  <div v-else class="link-input-wrapper">
+                    <input
+                      v-model="driveEditValue"
+                      type="url"
+                      placeholder="https://drive.google.com/..."
+                      class="link-input"
+                      @keyup.enter="saveEditDrive"
+                    />
+                    <button class="link-save" @click="saveEditDrive">✔</button>
+                    <button class="link-cancel" @click="cancelEditDrive">✖</button>
+                  </div>
                 </template>
                 <template v-else>
                   <div v-if="showDriveInput" class="link-input-wrapper">
@@ -241,11 +278,17 @@ const loading = ref(true);
 const error = ref('');
 const authors = ref<User[]>([]);
 
-// Состояния для ввода ссылок
+// Состояния для ввода ссылок (добавление)
 const showGithubInput = ref(false);
 const githubInput = ref('');
 const showDriveInput = ref(false);
 const driveInput = ref('');
+
+// Состояния для редактирования существующих ссылок
+const showEditGithub = ref(false);
+const githubEditValue = ref('');
+const showEditDrive = ref(false);
+const driveEditValue = ref('');
 
 const isAuthor = computed(() => {
   if (!authStore.userId || !project.value) return false;
@@ -484,7 +527,6 @@ async function updateProjectLinks(updates: Partial<NonNullable<Project['links']>
   try {
     const newLinks = { ...(project.value.links || {}), ...updates };
     await axios.put(`${baseUrl}/projects/${project.value.id}`, { links: newLinks });
-    // обновляем локальный объект
     project.value.links = newLinks;
   } catch (err) {
     console.error('Failed to update links', err);
@@ -492,6 +534,7 @@ async function updateProjectLinks(updates: Partial<NonNullable<Project['links']>
   }
 }
 
+// GitHub: добавление
 function saveGithubLink() {
   if (githubInput.value.trim()) {
     updateProjectLinks({ github: githubInput.value.trim() });
@@ -505,6 +548,36 @@ function cancelGithub() {
   githubInput.value = '';
 }
 
+// GitHub: редактирование
+function startEditGithub() {
+  githubEditValue.value = project.value?.links?.github || '';
+  showEditGithub.value = true;
+}
+
+function saveEditGithub() {
+  if (githubEditValue.value.trim()) {
+    updateProjectLinks({ github: githubEditValue.value.trim() });
+  }
+  showEditGithub.value = false;
+  githubEditValue.value = '';
+}
+
+function cancelEditGithub() {
+  showEditGithub.value = false;
+  githubEditValue.value = '';
+}
+
+// GitHub: удаление
+async function deleteGithubLink() {
+  if (!project.value?.links?.github) return;
+  if (confirm('Удалить ссылку на GitHub?')) {
+    const newLinks = { ...project.value.links };
+    delete newLinks.github;
+    await updateProjectLinks(newLinks as Partial<NonNullable<Project['links']>>);
+  }
+}
+
+// Google Drive: добавление
 function saveDriveLink() {
   if (driveInput.value.trim()) {
     updateProjectLinks({ google_drive: driveInput.value.trim() });
@@ -516,6 +589,35 @@ function saveDriveLink() {
 function cancelDrive() {
   showDriveInput.value = false;
   driveInput.value = '';
+}
+
+// Google Drive: редактирование
+function startEditDrive() {
+  driveEditValue.value = project.value?.links?.google_drive || '';
+  showEditDrive.value = true;
+}
+
+function saveEditDrive() {
+  if (driveEditValue.value.trim()) {
+    updateProjectLinks({ google_drive: driveEditValue.value.trim() });
+  }
+  showEditDrive.value = false;
+  driveEditValue.value = '';
+}
+
+function cancelEditDrive() {
+  showEditDrive.value = false;
+  driveEditValue.value = '';
+}
+
+// Google Drive: удаление
+async function deleteDriveLink() {
+  if (!project.value?.links?.google_drive) return;
+  if (confirm('Удалить ссылку на Google Диск?')) {
+    const newLinks = { ...project.value.links };
+    delete newLinks.google_drive;
+    await updateProjectLinks(newLinks as Partial<NonNullable<Project['links']>>);
+  }
 }
 
 // --- УДАЛЕНИЕ ПРОЕКТА ---
@@ -1058,7 +1160,9 @@ const goToUser = (userId: number) => {
 }
 
 .link-save,
-.link-cancel {
+.link-cancel,
+.link-edit,
+.link-delete {
   background: transparent;
   border: none;
   font-size: 1.2rem;
@@ -1087,27 +1191,53 @@ const goToUser = (userId: number) => {
   background: rgba(244, 67, 54, 0.2);
 }
 
+.link-edit {
+  color: #ff9800;
+}
+
+.link-edit:hover {
+  background: rgba(255, 152, 0, 0.2);
+}
+
+.link-delete {
+  color: #f44336;
+}
+
+.link-delete:hover {
+  background: rgba(244, 67, 54, 0.2);
+}
+
+/* Контейнер для отображения существующей ссылки и кнопок */
+.link-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.link-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* Цвета ссылок (исправлены) */
 .github-link {
-  background: #4285f4;
-  
+  background: #24292e; /* GitHub */
   color: white;
 }
 
 .github-link:hover {
   background: #2c3e50;
-  
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
 }
 
 .drive-link {
-  background: #24292e;
+  background: #4285f4; /* Google Drive */
   color: white;
 }
 
 .drive-link:hover {
-  
-  background: #2c3e50;
+  background: #3367d6;
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
 }

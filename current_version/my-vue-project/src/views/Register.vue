@@ -72,12 +72,10 @@
 
         <div class="form-group">
           <label for="class">Класс</label>
-          <input
+          <ClassInput
             id="class"
-            v-model.number="form.class_"
-            type="number"
-            step="0.1"
-            placeholder="11.0"
+            v-model="form.class_"
+            placeholder="3.1 – 11.6"
           />
         </div>
 
@@ -102,6 +100,24 @@
           />
         </div>
 
+        <!-- Новое поле: подтверждение пароля -->
+        <div class="form-group">
+          <label for="confirmPassword">Подтверждение пароля</label>
+          <input
+            id="confirmPassword"
+            v-model="confirmPassword"
+            type="password"
+            placeholder="Повторите пароль"
+            required
+            @input="passwordMatchError = false"
+          />
+        </div>
+
+        <!-- Отображение ошибки, если пароли не совпадают -->
+        <div v-if="passwordMatchError" class="error-message">
+          Пароли не совпадают
+        </div>
+
         <div v-if="errorMessage" class="error-message">
           {{ errorMessage }}
         </div>
@@ -124,6 +140,7 @@ import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import axios from 'axios';
+import ClassInput from '@/components/ClassInput.vue';
 
 interface RegisterForm {
   nickname: string;
@@ -154,6 +171,10 @@ const avatarFile = ref<File | null>(null);
 const avatarPreview = ref<string | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 
+// Поле подтверждения пароля
+const confirmPassword = ref('');
+const passwordMatchError = ref(false);
+
 const onFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement;
   if (!input.files || input.files.length === 0) {
@@ -162,7 +183,6 @@ const onFileChange = (event: Event) => {
   }
 
   const file = input.files[0];
-  // Ограничение размера 5 МБ
   if (file.size > 5 * 1024 * 1024) {
     errorMessage.value = 'Файл слишком большой (макс. 5 МБ)';
     clearAvatar();
@@ -186,10 +206,16 @@ const clearAvatar = () => {
 };
 
 const handleRegister = async () => {
+  // Проверка совпадения паролей
+  if (form.password !== confirmPassword.value) {
+    passwordMatchError.value = true;
+    return;
+  }
+  passwordMatchError.value = false;
+
   loading.value = true;
   errorMessage.value = '';
 
-  // Подготовка данных пользователя
   const { class_, ...rest } = form;
   const userData = {
     ...rest,
@@ -198,7 +224,6 @@ const handleRegister = async () => {
   };
 
   try {
-    // 1. Создание пользователя (JSON)
     const success = await authStore.register(userData);
     if (!success) {
       errorMessage.value =
@@ -212,7 +237,6 @@ const handleRegister = async () => {
       throw new Error('Не удалось получить ID пользователя');
     }
 
-    // 2. Загрузка аватарки, если файл выбран
     if (avatarFile.value) {
       const formData = new FormData();
       formData.append('file', avatarFile.value);
@@ -223,12 +247,10 @@ const handleRegister = async () => {
         { headers: { 'Content-Type': 'multipart/form-data' } }
       );
 
-      // Обновляем данные пользователя в store (сервер возвращает обновлённого пользователя)
       authStore.user = response.data;
       localStorage.setItem('user', JSON.stringify(response.data));
     }
 
-    // Всё успешно — переход на главную
     router.push('/main');
   } catch (error: any) {
     console.error('Registration error:', error);
@@ -372,7 +394,6 @@ input:focus {
   text-decoration: underline;
 }
 
-/* Стили для блока аватарки */
 .avatar-group {
   display: flex;
   flex-direction: column;
