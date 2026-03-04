@@ -50,6 +50,11 @@
       <button class="logout-button" @click="logout">Выйти</button>
     </div>
 
+    <!-- Кнопка удаления аккаунта в правом нижнем углу экрана -->
+    <button class="delete-account-button" @click="confirmDeleteAccount" :disabled="deleting">
+      {{ deleting ? 'Удаление...' : '🗑 Удалить аккаунт' }}
+    </button>
+
     <AvatarModal
       :show="showAvatarModal"
       :src="avatarUrl"
@@ -65,17 +70,20 @@ import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import AvatarModal from '@/components/AvatarModal.vue';
+import axios from 'axios';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const user = computed(() => authStore.user);
 const avatarError = ref(false);
 const showAvatarModal = ref(false);
+const deleting = ref(false);
 
-// Явно указываем адрес бэкенда (при необходимости замените на переменную окружения позже)
+const baseUrl = 'http://localhost:8000';
+
 const avatarUrl = computed(() => {
   if (!user.value?.avatar) return '';
-  return `http://localhost:8000/avatars/${user.value.avatar}`;
+  return `${baseUrl}/avatars/${user.value.avatar}`;
 });
 
 const openAvatarModal = () => {
@@ -96,6 +104,32 @@ const logout = () => {
   if (confirm('Вы уверены, что хотите выйти?')) {
     authStore.logout();
     router.push('/login');
+  }
+};
+
+const confirmDeleteAccount = () => {
+  if (!user.value) return;
+  const confirmed = confirm(
+    'Вы уверены, что хотите удалить свой аккаунт? Это действие необратимо. Все ваши проекты останутся, но вы будете удалены из списка авторов.'
+  );
+  if (confirmed) {
+    deleteAccount();
+  }
+};
+
+const deleteAccount = async () => {
+  if (!user.value) return;
+  deleting.value = true;
+  try {
+    await axios.delete(`${baseUrl}/users/${user.value.id}`);
+    authStore.logout();
+    router.push('/login');
+    alert('Аккаунт успешно удалён');
+  } catch (error) {
+    console.error('Ошибка при удалении аккаунта:', error);
+    alert('Не удалось удалить аккаунт. Попробуйте позже.');
+  } finally {
+    deleting.value = false;
   }
 };
 </script>
@@ -302,5 +336,38 @@ const logout = () => {
 
 .logout-button:active {
   transform: scale(0.98);
+}
+
+/* Кнопка удаления аккаунта в правом нижнем углу экрана (фиксированная) */
+.delete-account-button {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 100;
+  padding: 14px 28px;
+  background-color: #d32f2f;
+  color: white;
+  border: none;
+  border-radius: 50px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s, transform 0.1s;
+  box-shadow: var(--shadow-strong);
+}
+
+.delete-account-button:hover:not(:disabled) {
+  background-color: #b71c1c;
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+
+.delete-account-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.delete-account-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
