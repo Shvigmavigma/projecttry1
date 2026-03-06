@@ -1,5 +1,7 @@
-from sqlalchemy import Column, Integer, String, Float, JSON
+# models.py
+from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
+from datetime import datetime
 
 Base = declarative_base()
 
@@ -12,10 +14,14 @@ class User(Base):
     fullname = Column(String, nullable=False, index=True)
     class_ = Column(Float, default=0.0)
     speciality = Column(String, nullable=True)
-    email = Column(String, nullable=False, index=True)
+    email = Column(String, nullable=False, index=True, unique=True)
     avatar = Column(String, nullable=True)
-
-
+    
+    # Поля для email-авторизации
+    is_active = Column(Boolean, default=False)      # Активен ли пользователь
+    is_verified = Column(Boolean, default=False)    # Подтвержден ли email
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class Project(Base):
     __tablename__ = "projects"
@@ -26,4 +32,4 @@ class Project(Base):
     underbody = Column(String, default="")
     authors_ids = Column(JSON, nullable=False, default=list) 
     tasks = Column(JSON, default=list)
-    links=Column(JSON, default=dict)
+    links = Column(JSON, default=dict)

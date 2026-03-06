@@ -1,54 +1,102 @@
-import { defineStore } from 'pinia';
-import axios from 'axios';
-import type { User } from '@/types';
+// src/stores/auth.ts
+import { defineStore } from 'pinia'
+import axios from 'axios'
+import type { User } from '@/types'
 
 interface AuthState {
-  user: User | null;
+  user: User | null
+  isAuthenticated: boolean
 }
 
 export const useAuthStore = defineStore('auth', {
   state: (): AuthState => ({
     user: null,
+    isAuthenticated: false
   }),
+  
   getters: {
-    isAuthenticated: (state) => !!state.user,
-    userId: (state) => state.user?.id,
+    userId: (state) => state.user?.id || null
   },
+  
   actions: {
-    async login(nickname: string, password: string): Promise<boolean> {
+    async login(nickname: string, password: string) {
       try {
-        const response = await axios.post<User>('http://localhost:8000/login', {
+        console.log('Attempting login for:', nickname);
+        
+        const response = await axios.post('/auth/login', {
           nickname,
-          password,
+          password
         });
-        this.user = response.data;
-        localStorage.setItem('user', JSON.stringify(this.user));
+        
+        console.log('Login response:', response.data);
+        
+        const { access_token, refresh_token } = response.data;
+        
+        localStorage.setItem('access_token', access_token);
+        localStorage.setItem('refresh_token', refresh_token);
+        
+        axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+        
+        // Получаем данные пользователя
+        const userResponse = await axios.get('/users/me');
+        console.log('User data response:', userResponse.data);
+        
+        this.user = userResponse.data;
+        this.isAuthenticated = true;
+        
         return true;
-      } catch (error) {
-        console.error('Login error:', error);
+      } catch (error: any) {
+        console.error('Login error details:', {
+          status: error.response?.status,
+          statusText: error.response?.statusText,
+          data: error.response?.data,
+          message: error.message
+        });
         return false;
       }
     },
-    async register(userData: Omit<User, 'id'> & { password: string }): Promise<boolean> {
+    
+    async register(userData: any) {
       try {
-        const response = await axios.post<User>('http://localhost:8000/users/', userData);
-        this.user = response.data;
-        localStorage.setItem('user', JSON.stringify(this.user));
-        return true;
+        const response = await axios.post('/users/', userData);
+        return response.data;
       } catch (error) {
-        console.error('Registration error:', error);
-        return false;
+        console.error('Register error:', error);
+        throw error;
       }
     },
+    
     logout() {
       this.user = null;
-      localStorage.removeItem('user');
+      this.isAuthenticated = false;
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      delete axios.defaults.headers.common['Authorization'];
     },
-    loadUserFromStorage() {
-      const stored = localStorage.getItem('user');
-      if (stored) {
-        this.user = JSON.parse(stored);
+    
+    async checkAuth() {
+      const token = localStorage.getItem('access_token');
+      if (!token) {
+        this.isAuthenticated = false;
+        return false;
       }
-    },
-  },
-});
+      
+      try {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+        const response = await axios.get('/users/me');
+        this.user = response.data;
+        this.isAuthenticated = true;
+        console.log('Auth check successful:', this.user);
+        return true;
+      } catch (error: any) {
+        console.error('Check auth error:', {
+          status: error.response?.status,
+          data: error.response?.data,
+          message: error.message
+        });
+        this.logout();
+        return false;
+      }
+    }
+  }
+})

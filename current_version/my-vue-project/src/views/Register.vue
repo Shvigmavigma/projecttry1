@@ -100,7 +100,7 @@
           />
         </div>
 
-        <!-- Новое поле: подтверждение пароля -->
+        <!-- Поле подтверждение пароля -->
         <div class="form-group">
           <label for="confirmPassword">Подтверждение пароля</label>
           <input
@@ -111,6 +111,23 @@
             required
             @input="passwordMatchError = false"
           />
+        </div>
+
+        <!-- Чекбокс для выбора типа регистрации -->
+        <div class="form-group checkbox-group">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              v-model="requireEmailVerification"
+              class="checkbox-input"
+            />
+            <span class="checkbox-text">
+              Подтвердить email (на указанный адрес будет отправлен код)
+            </span>
+          </label>
+          <div v-if="requireEmailVerification" class="verification-info">
+            <small>✉️ Код подтверждения будет отправлен на {{ form.email || 'указанный email' }}</small>
+          </div>
         </div>
 
         <!-- Отображение ошибки, если пароли не совпадают -->
@@ -139,8 +156,8 @@ import { reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import axios from 'axios';
 import ClassInput from '@/components/ClassInput.vue';
+import axios from 'axios';
 
 interface RegisterForm {
   nickname: string;
@@ -174,6 +191,9 @@ const fileInput = ref<HTMLInputElement | null>(null);
 // Поле подтверждения пароля
 const confirmPassword = ref('');
 const passwordMatchError = ref(false);
+
+// Чекбокс для выбора типа регистрации
+const requireEmailVerification = ref(false);
 
 const onFileChange = (event: Event) => {
   const input = event.target as HTMLInputElement;
@@ -213,6 +233,12 @@ const handleRegister = async () => {
   }
   passwordMatchError.value = false;
 
+  // Проверка email, если выбрана верификация
+  if (requireEmailVerification.value && !form.email) {
+    errorMessage.value = 'Email обязателен для подтверждения';
+    return;
+  }
+
   loading.value = true;
   errorMessage.value = '';
 
@@ -224,40 +250,106 @@ const handleRegister = async () => {
   };
 
   try {
-    const success = await authStore.register(userData);
-    if (!success) {
-      errorMessage.value =
-        'Ошибка регистрации. Возможно, пользователь с таким никнеймом уже существует.';
-      loading.value = false;
-      return;
+    if (requireEmailVerification.value) {
+      // Регистрация с подтверждением по email
+      await handleEmailVerification(userData);
+    } else {
+      // Обычная регистрация (без подтверждения)
+      await handleSimpleRegistration(userData);
     }
-
-    const userId = authStore.user?.id;
-    if (!userId) {
-      throw new Error('Не удалось получить ID пользователя');
-    }
-
-    if (avatarFile.value) {
-      const formData = new FormData();
-      formData.append('file', avatarFile.value);
-
-      const response = await axios.post(
-        `http://localhost:8000/users/${userId}/avatar`,
-        formData,
-        { headers: { 'Content-Type': 'multipart/form-data' } }
-      );
-
-      authStore.user = response.data;
-      localStorage.setItem('user', JSON.stringify(response.data));
-    }
-
-    router.push('/main');
   } catch (error: any) {
     console.error('Registration error:', error);
     errorMessage.value =
       error.response?.data?.detail || 'Произошла ошибка при регистрации';
   } finally {
     loading.value = false;
+  }
+};
+
+// Обычная регистрация (без подтверждения email)
+const handleSimpleRegistration = async (userData: any) => {
+  try {
+    // Создаем пользователя через отдельный эндпоинт
+    const response = await axios.post('http://localhost:8000/users/', userData);
+    const newUser = response.data;
+    
+    console.log('User created:', newUser);
+    console.log('is_active:', newUser.is_active);    // true
+    console.log('is_verified:', newUser.is_verified); // false
+    
+    // Автоматически логиним пользователя
+    const loginSuccess = await authStore.login(userData.nickname, userData.password);
+    
+    if (!loginSuccess) {
+      throw new Error('Не удалось выполнить автоматический вход');
+    }
+
+    // Загружаем аватарку, если есть
+    if (avatarFile.value && authStore.user?.id) {
+      await uploadAvatar(authStore.user.id);
+    }
+    
+    router.push('/main');
+  } catch (error: any) {
+    console.error('Simple registration error:', error);
+    if (error.response?.status === 400) {
+      const detail = error.response.data?.detail;
+      if (typeof detail === 'string') {
+        errorMessage.value = detail;
+      } else if (Array.isArray(detail)) {
+        errorMessage.value = detail.map((d: any) => d.msg).join(', ');
+      } else {
+        errorMessage.value = 'Ошибка регистрации. Возможно, пользователь с таким никнеймом или email уже существует.';
+      }
+    } else {
+      throw error;
+    }
+  }
+};
+
+// Регистрация с подтверждением по email
+const handleEmailVerification = async (userData: any) => {
+  // 1. Запрос кода подтверждения
+  await axios.post('http://localhost:8000/auth/request-verification-code', {
+    email: form.email
+  });
+
+  // 2. Сохраняем данные пользователя в sessionStorage
+  sessionStorage.setItem('pending_registration', JSON.stringify(userData));
+
+  // 3. Сохраняем аватарку, если есть
+  if (avatarFile.value) {
+    const reader = new FileReader();
+    reader.onload = () => {
+      sessionStorage.setItem('pending_avatar', reader.result as string);
+    };
+    reader.readAsDataURL(avatarFile.value);
+    
+    // Даем время на чтение файла
+    setTimeout(() => {
+      router.push(`/verify-email?email=${encodeURIComponent(form.email)}`);
+    }, 500);
+  } else {
+    router.push(`/verify-email?email=${encodeURIComponent(form.email)}`);
+  }
+};
+
+// Загрузка аватарки
+const uploadAvatar = async (userId: number) => {
+  if (!avatarFile.value) return;
+  
+  const formData = new FormData();
+  formData.append('file', avatarFile.value);
+
+  const response = await axios.post(
+    `http://localhost:8000/users/${userId}/avatar`,
+    formData,
+    { headers: { 'Content-Type': 'multipart/form-data' } }
+  );
+
+  // Обновляем данные пользователя в store
+  if (authStore.user) {
+    authStore.user.avatar = response.data.avatar;
   }
 };
 </script>
@@ -316,7 +408,10 @@ label {
   font-weight: 500;
 }
 
-input {
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"] {
   width: 100%;
   padding: 12px 16px;
   border: 1px solid var(--input-border);
@@ -336,6 +431,45 @@ input:focus {
 
 .dark-theme input:focus {
   box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
+}
+
+.checkbox-group {
+  margin-top: 20px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: pointer;
+  font-weight: normal;
+  color: var(--text-primary);
+}
+
+.checkbox-input {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  cursor: pointer;
+  accent-color: var(--accent-color);
+}
+
+.checkbox-text {
+  flex: 1;
+  font-size: 0.95rem;
+  line-height: 1.4;
+}
+
+.verification-info {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(66, 185, 131, 0.1);
+  border-radius: 6px;
+  color: var(--accent-color);
+  font-size: 0.9rem;
+  border-left: 3px solid var(--accent-color);
 }
 
 .error-message {
@@ -438,6 +572,8 @@ input[type="file"] {
   color: var(--text-primary);
   cursor: pointer;
   margin-bottom: 8px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 input[type="file"]::-webkit-file-upload-button {

@@ -28,7 +28,13 @@
           />
         </div>
 
-        <button type="submit" class="login-button">Войти</button>
+        <div v-if="errorMessage" class="error-message">
+          {{ errorMessage }}
+        </div>
+
+        <button type="submit" class="login-button" :disabled="loading">
+          {{ loading ? 'Вход...' : 'Войти' }}
+        </button>
       </form>
 
       <p class="register-link">
@@ -43,22 +49,69 @@ import { ref } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
+import axios from 'axios';
 
 const authStore = useAuthStore();
 const router = useRouter();
 const nickname = ref('');
 const password = ref('');
+const loading = ref(false);
+const errorMessage = ref('');
 
 const handleLogin = async () => {
+  if (!nickname.value || !password.value) {
+    errorMessage.value = 'Заполните все поля';
+    return;
+  }
+
+  loading.value = true;
+  errorMessage.value = '';
+
   try {
-    const success = await authStore.login(nickname.value, password.value);
-    if (success) {
-      router.push('/main');
-    } else {
-      alert('Неверный никнейм или пароль');
-    }
+    // Отправляем запрос на новый эндпоинт /auth/login
+    const response = await axios.post('http://localhost:8000/auth/login', {
+      nickname: nickname.value,
+      password: password.value
+    });
+
+    // Сохраняем токены
+    const { access_token, refresh_token } = response.data;
+    
+    localStorage.setItem('access_token', access_token);
+    localStorage.setItem('refresh_token', refresh_token);
+    
+    // Настраиваем axios для автоматической отправки токена
+    axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    
+    // Получаем данные пользователя
+    const userResponse = await axios.get('http://localhost:8000/users/me');
+    authStore.user = userResponse.data;
+    
+    // Перенаправляем на главную
+    router.push('/main');
+    
   } catch (error: any) {
-    alert('Ошибка: ' + (error.response?.data?.detail || error.message));
+    console.error('Login error:', error);
+    
+    if (error.code === 'ERR_NETWORK') {
+      errorMessage.value = 'Ошибка сети. Проверьте подключение к серверу.';
+    } else if (error.response) {
+      // Обработка разных статусов ошибок
+      switch (error.response.status) {
+        case 401:
+          errorMessage.value = 'Неверный логин или пароль';
+          break;
+        case 403:
+          errorMessage.value = 'Email не подтвержден. Проверьте почту.';
+          break;
+        default:
+          errorMessage.value = error.response.data?.detail || 'Ошибка при входе';
+      }
+    } else {
+      errorMessage.value = error.message || 'Произошла ошибка';
+    }
+  } finally {
+    loading.value = false;
   }
 };
 </script>
@@ -139,6 +192,17 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
 }
 
+.error-message {
+  background: var(--error-bg);
+  color: var(--danger-color);
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 20px;
+  text-align: center;
+  border: 1px solid var(--danger-color);
+  font-size: 0.9rem;
+}
+
 .login-button {
   width: 100%;
   padding: 14px;
@@ -153,12 +217,17 @@ input:focus {
   margin-top: 8px;
 }
 
-.login-button:hover {
+.login-button:hover:not(:disabled) {
   background-color: var(--accent-hover);
 }
 
-.login-button:active {
+.login-button:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.login-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .register-link {

@@ -1,37 +1,106 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import { useAuthStore } from '@/stores/auth'
+// src/router/index.ts
+import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
+import Login from '../views/Login.vue'
+import Register from '../views/Register.vue'
+import VerifyEmail from '../views/VerifyEmail.vue'
+import MainMenu from '../views/MainMenu.vue'
+import AllUsers from '../views/AllUsers.vue'
+import UserDetails from '../views/UserDetails.vue'
+import AllProjects from '../views/AllProjects.vue'
+import MyProjects from '../views/MyProjects.vue'  // Добавить импорт
+import ProjectDetails from '../views/ProjectDetails.vue'
+import ProjectEdit from '../views/ProjectEdit.vue'
+import TaskDetails from '../views/TaskDetails.vue'
+import TaskEdit from '../views/TaskEdit.vue'
+import Profile from '../views/Profile.vue'
+import ProfileEdit from '../views/ProfileEdit.vue'
+import UserProjects from '../views/UserProjects.vue'
 
-const routes = [
-  { path: '/', redirect: '/login' },
-  { path: '/login', component: () => import('@/views/Login.vue') },
-  { path: '/register', component: () => import('@/views/Register.vue') },
-  { path: '/main', component: () => import('@/views/MainMenu.vue'), meta: { requiresAuth: true } },
-  { path: '/users', component: () => import('@/views/AllUsers.vue'), meta: { requiresAuth: true } },
-  { path: '/user/:id', component: () => import('@/views/UserDetails.vue'), meta: { requiresAuth: true } },
-  { path: '/profile', component: () => import('@/views/Profile.vue'), meta: { requiresAuth: true } },
-  { path: '/profile/edit', component: () => import('@/views/ProfileEdit.vue'), meta: { requiresAuth: true } },
-  { path: '/my-projects', component: () => import('@/views/UserProjects.vue'), meta: { requiresAuth: true } },
-  { path: '/projects', component: () => import('@/views/AllProjects.vue'), meta: { requiresAuth: true } },
-  { path: '/project/new', component: () => import('@/views/ProjectEdit.vue'), meta: { requiresAuth: true } },
-  { path: '/project/edit/:id', component: () => import('@/views/ProjectEdit.vue'), meta: { requiresAuth: true } }, 
-  { path: '/project/:projectId/task/:taskIndex', component: () => import('@/views/TaskDetails.vue'), meta: { requiresAuth: true } },
-  { path: '/project/:id', component: () => import('@/views/ProjectDetails.vue'), meta: { requiresAuth: true } },
-  { path: '/project/:projectId/task/:taskIndex/edit', component: () => import('@/views/TaskEdit.vue'), meta: { requiresAuth: true } },
-
+const routes: Array<RouteRecordRaw> = [
+  {
+    path: '/',
+    redirect: '/login'
+  },
+  {
+    path: '/login',
+    name: 'Login',
+    component: Login
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: Register
+  },
+  {
+    path: '/verify-email',
+    name: 'VerifyEmail',
+    component: VerifyEmail
+  },
+  {
+    path: '/main',
+    name: 'MainMenu',
+    component: MainMenu
+  },
+  {
+    path: '/users',
+    name: 'AllUsers',
+    component: AllUsers
+  },
+  {
+    path: '/user/:id',
+    name: 'UserDetails',
+    component: UserDetails
+  },
+  {
+    path: '/projects',
+    name: 'AllProjects',
+    component: AllProjects
+  },
+  {
+    path: '/my-projects',           // Добавить этот маршрут
+    name: 'MyProjects',
+    component: MyProjects
+  },
+  {
+    path: '/project/:id',
+    name: 'ProjectDetails',
+    component: ProjectDetails
+  },
+  {
+    path: '/project/edit/:id',
+    name: 'ProjectEdit',
+    component: ProjectEdit
+  },
+  {
+    path: '/project/:projectId/task/:taskIndex',
+    name: 'TaskDetails',
+    component: TaskDetails
+  },
+  {
+    path: '/project/:projectId/task/:taskIndex/edit',
+    name: 'TaskEdit',
+    component: TaskEdit
+  },
+  {
+    path: '/profile',
+    name: 'Profile',
+    component: Profile
+  },
+  {
+    path: '/profile/edit',
+    name: 'ProfileEdit',
+    component: ProfileEdit
+  },
+  {
+    path: '/user/:id/projects',
+    name: 'UserProjects',
+    component: UserProjects
+  }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
-})
-
-router.beforeEach((to, from) => {
-  const authStore = useAuthStore()
-  authStore.loadUserFromStorage()
-  if (to.meta.requiresAuth && !authStore.isAuthenticated) {
-    return '/login'
-  }
-  return true
 })
 
 export default router

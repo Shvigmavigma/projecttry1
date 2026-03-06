@@ -1,3 +1,4 @@
+// types/index.ts
 export interface User {
   id: number;
   nickname: string;
@@ -6,7 +7,12 @@ export interface User {
   speciality?: string;
   email: string;
   avatar?: string;
+  is_active?: boolean;
+  is_verified?: boolean;
+  created_at?: string;
+  updated_at?: string;
 }
+
 export interface SubTask {
   id: string;         
   title: string;
@@ -23,7 +29,6 @@ export interface Task {
   timelinend?: string;
   progress?: number;   
   subtasks?: SubTask[];
-
 }
 
 export interface Project {
@@ -45,8 +50,8 @@ export interface ProjectUpdate {
   tasks?: Task[];
   author_id?: number;
 }
+
 export interface ProjectLinks {
   github?: string;
   google_drive?: string;
-
 }

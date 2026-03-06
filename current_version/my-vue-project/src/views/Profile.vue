@@ -40,6 +40,23 @@
           <span class="info-label">Специальность</span>
           <span class="info-value">{{ user.speciality || 'не указана' }}</span>
         </div>
+        
+        <!-- Статус верификации email с понятным описанием -->
+        <div class="info-row verification-status">
+          <span class="info-label">Статус email</span>
+          <span class="info-value" :class="user.is_verified ? 'verified' : 'unverified'">
+            <span class="status-icon">{{ user.is_verified ? '✅' : '⏳' }}</span>
+            {{ user.is_verified ? 'Подтвержден' : 'Ожидает подтверждения' }}
+          </span>
+        </div>
+        
+        <!-- Если email не подтвержден, показываем подсказку -->
+        <div v-if="!user.is_verified" class="verification-hint">
+          <p>✉️ Для полного доступа к функциям подтвердите email</p>
+          <button @click="resendVerification" class="resend-button">
+            Отправить код повторно
+          </button>
+        </div>
       </div>
 
       <div v-else class="loading">
@@ -65,7 +82,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, onMounted } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
@@ -78,12 +95,26 @@ const user = computed(() => authStore.user);
 const avatarError = ref(false);
 const showAvatarModal = ref(false);
 const deleting = ref(false);
+const resending = ref(false);
 
-const baseUrl = 'http://localhost:8000';
-
+// URL для аватарки (полный URL для гарантии загрузки)
 const avatarUrl = computed(() => {
   if (!user.value?.avatar) return '';
-  return `${baseUrl}/avatars/${user.value.avatar}`;
+  // Используем полный URL для надежности
+  return `http://localhost:8000/avatars/${user.value.avatar}`;
+});
+
+onMounted(async () => {
+  if (!authStore.isAuthenticated) {
+    const isValid = await authStore.checkAuth();
+    if (!isValid) {
+      router.push('/login');
+    }
+  }
+  // Добавьте для отладки
+  console.log('Profile mounted - user:', user.value);
+  console.log('is_verified:', user.value?.is_verified);
+  console.log('isAuthenticated:', authStore.isAuthenticated);
 });
 
 const openAvatarModal = () => {
@@ -121,15 +152,61 @@ const deleteAccount = async () => {
   if (!user.value) return;
   deleting.value = true;
   try {
-    await axios.delete(`${baseUrl}/users/${user.value.id}`);
+    await axios.delete(`/users/${user.value.id}`);
     authStore.logout();
     router.push('/login');
     alert('Аккаунт успешно удалён');
-  } catch (error) {
+  } catch (error: any) {
     console.error('Ошибка при удалении аккаунта:', error);
-    alert('Не удалось удалить аккаунт. Попробуйте позже.');
+    if (error.response?.status === 401) {
+      alert('Сессия истекла. Пожалуйста, войдите снова.');
+      authStore.logout();
+      router.push('/login');
+    } else {
+      alert('Не удалось удалить аккаунт. Попробуйте позже.');
+    }
   } finally {
     deleting.value = false;
+  }
+};
+
+const resendVerification = async () => {
+  if (!user.value?.email) return;
+  resending.value = true;
+  try {
+    // Пробуем отправить запрос на повторную отправку
+    await axios.post('/auth/resend-verification-code', {
+      email: user.value.email
+    });
+    alert('✅ Код подтверждения отправлен на вашу почту');
+  } catch (error: any) {
+    console.error('Error resending code:', error);
+    
+    // Обрабатываем разные ошибки
+    if (error.response) {
+      switch (error.response.status) {
+        case 400:
+          if (error.response.data?.detail === 'Email already verified') {
+            alert('✅ Ваш email уже подтвержден');
+            // Обновляем данные пользователя
+            await authStore.checkAuth();
+          } else {
+            alert(`❌ ${error.response.data?.detail || 'Ошибка запроса'}`);
+          }
+          break;
+        case 404:
+          alert('❌ Пользователь не найден');
+          break;
+        default:
+          alert(`❌ ${error.response.data?.detail || 'Ошибка сервера'}`);
+      }
+    } else if (error.code === 'ERR_NETWORK') {
+      alert('❌ Ошибка сети. Проверьте подключение к серверу.');
+    } else {
+      alert('❌ Не удалось отправить код. Попробуйте позже.');
+    }
+  } finally {
+    resending.value = false;
   }
 };
 </script>
@@ -212,6 +289,7 @@ const deleteAccount = async () => {
   overflow: hidden;
   font-size: 48px;
   transition: opacity 0.2s;
+  border: 3px solid var(--accent-color);
 }
 
 .avatar.clickable {
@@ -220,6 +298,7 @@ const deleteAccount = async () => {
 
 .avatar.clickable:hover {
   opacity: 0.8;
+  transform: scale(1.05);
 }
 
 .avatar img {
@@ -235,6 +314,7 @@ const deleteAccount = async () => {
   justify-content: center;
   width: 100%;
   height: 100%;
+  font-size: 36px;
 }
 
 .profile-header h2 {
@@ -285,6 +365,68 @@ const deleteAccount = async () => {
   hyphens: auto;
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.verification-status {
+  background: rgba(128, 128, 128, 0.05);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 5px;
+}
+
+.status-icon {
+  font-size: 1.2rem;
+}
+
+.info-value.verified {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.info-value.unverified {
+  color: #ff9800;
+  font-weight: 600;
+}
+
+.verification-hint {
+  background: rgba(255, 152, 0, 0.1);
+  border-left: 4px solid #ff9800;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.verification-hint p {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+}
+
+.resend-button {
+  background: var(--bg-card);
+  color: var(--accent-color);
+  border: 1px solid var(--accent-color);
+  border-radius: 20px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.resend-button:hover {
+  background: var(--accent-color);
+  color: var(--button-text);
+}
+
+.resend-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .loading {
@@ -369,5 +511,85 @@ const deleteAccount = async () => {
 .delete-account-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  .profile-info {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 32px;
+}
+
+.info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-color);
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  gap: 10px;
+}
+
+.info-label {
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.info-value {
+  color: var(--text-primary);
+  font-size: 1.1rem;
+  text-align: right;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+  hyphens: auto;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  font-weight: normal;  /* Добавлено - убирает жирность */
+}
+
+.verification-status {
+  background: rgba(128, 128, 128, 0.05);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-top: 5px;
+}
+
+.status-icon {
+  font-size: 1.2rem;
+  margin-right: 4px;
+}
+
+.info-value.verified {
+  color: #4caf50;
+  font-weight: normal;  /* Убрана жирность */
+}
+
+.info-value.unverified {
+  color: #ff9800;
+  font-weight: normal;  /* Убрана жирность */
+}
+
+.verification-hint {
+  background: rgba(255, 152, 0, 0.1);
+  border-left: 4px solid #ff9800;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-top: 10px;
+  margin-bottom: 10px;
+}
+
+.verification-hint p {
+  color: var(--text-primary);
+  margin-bottom: 10px;
+  font-size: 0.95rem;
+}
 }
 </style>

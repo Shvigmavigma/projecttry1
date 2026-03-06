@@ -1,5 +1,7 @@
+# schemas.py
 from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, Dict, Any, List
+from datetime import datetime
 
 # ---------- User ----------
 class UserBase(BaseModel):
@@ -14,9 +16,12 @@ class UserBase(BaseModel):
     email: EmailStr
     avatar: Optional[str] = None 
 
-
 class UserResponse(UserBase):
     id: int
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     model_config = ConfigDict(
         from_attributes=True,
         populate_by_name=True           
@@ -29,7 +34,6 @@ class LoginRequest(BaseModel):
     nickname: str
     password: str
 
-    
 class UserUpdate(BaseModel):
     fullname: Optional[str] = None
     email: Optional[EmailStr] = None
@@ -38,6 +42,7 @@ class UserUpdate(BaseModel):
     avatar: Optional[str] = None 
 
     model_config = ConfigDict(populate_by_name=True)
+
 # ---------- Teacher ----------
 class TeacherBase(UserBase):
     prof: str  
@@ -58,9 +63,9 @@ class ProjectBase(BaseModel):
         default=[],
         json_schema_extra={
             "example": [
-                {"title": "расчёты", "status": "в процессе", "body": "очень важная задача", "timelinend": "20.11.2026", "timeline":"15.10.2025"},
-                {"title": "разработка интерфейса", "status": "в работе", "body": "создать адаптивный дизайн", "timelinend": "01.12.2026", "timeline":"15.10.2025"},
-                {"title": "тестирование", "status": "ожидает", "body": "проверить всё", "timelinend": "10.12.2026", "timeline":"15.10.2025"}
+                {"title": "расчёты", "status": "в процессе", "body": "очень важная задача", "timelinend": "20.11.2026", "timeline": "15.10.2025"},
+                {"title": "разработка интерфейса", "status": "в работе", "body": "создать адаптивный дизайн", "timelinend": "01.12.2026", "timeline": "15.10.2025"},
+                {"title": "тестирование", "status": "ожидает", "body": "проверить всё", "timelinend": "10.12.2026", "timeline": "15.10.2025"}
             ]
         }
     )
@@ -88,3 +93,24 @@ class ProjectUpdate(BaseModel):
         default=None,
         json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
     )
+
+# ---------- Email верификация ----------
+class EmailVerificationCodeRequest(BaseModel):
+    email: EmailStr
+
+class EmailVerificationRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+# ---------- Token схемы ----------
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
