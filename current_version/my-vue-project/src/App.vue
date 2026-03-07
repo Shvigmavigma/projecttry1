@@ -25,7 +25,7 @@ useThemeStore();
   --shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
   --shadow-strong: 0 10px 30px rgba(0, 40, 0, 0.1);
   --input-bg: #ffffff;
-  --input-border: #cbd5e0;
+  --input-border: #020d18;
   --button-text: #ffffff;
   --danger-color: #c44;
   --danger-bg: #fee;
@@ -82,5 +82,34 @@ body {
 
 * {
   box-sizing: border-box;
+}
+/* В App.vue или в отдельном CSS файле */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  margin: 0;
+  padding: 0;
+}
+
+#app {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* Центрирование контента */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
 }
 </style>

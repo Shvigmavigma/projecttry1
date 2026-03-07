@@ -43,6 +43,36 @@
         <span v-if="!isValidDateFormat(task.timelinend) && task.timelinend" class="date-warning">⚠️ Неверный формат даты окончания</span>
       </section>
 
+      <!-- Комментарии к задаче -->
+      <section class="task-section comments-main-section">
+        <div class="section-header">
+          <h3>Комментарии к задаче</h3>
+          <button 
+            v-if="isTaskAuthor" 
+            class="comment-toggle-btn"
+            @click="showTaskComments = !showTaskComments"
+          >
+            <span class="btn-content">
+              <span class="comment-icon">💬</span>
+              {{ showTaskComments ? 'Скрыть' : 'Показать' }}
+              <span v-if="unreadTaskCommentsCount > 0" class="header-unread-badge">
+                {{ unreadTaskCommentsCount }}
+              </span>
+            </span>
+          </button>
+        </div>
+        
+        <CommentsSection
+          v-if="showTaskComments"
+          :comments="taskComments"
+          :can-comment="isTaskAuthor"
+          :is-author="isTaskAuthor"
+          :on-add-comment="addTaskComment"
+          :on-mark-as-read="markTaskCommentAsRead"
+          :on-delete-comment="deleteTaskComment"
+        />
+      </section>
+
       <!-- Диаграмма Ганта (общий прогресс) -->
       <section class="gantt-section">
         <h3>Общий прогресс</h3>
@@ -53,7 +83,6 @@
               :style="{ width: totalProgress + '%', backgroundColor: barColor }"
               :title="`Прогресс: ${totalProgress.toFixed(1)}%`"
             ></div>
-            <!-- Добавлен элемент для отображения процента на полосе -->
             <span class="gantt-percent">{{ totalProgress.toFixed(1) }}%</span>
             <span class="gantt-dates">{{ task.timeline || '?' }} – {{ task.timelinend || '?' }}</span>
           </div>
@@ -178,12 +207,22 @@
 import { ref, onMounted, computed, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
+import { useAuthStore } from '@/stores/auth';
+import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Task, SubTask } from '@/types';
+import CommentsSection from '@/components/CommentsSection.vue';
+import type { Task, SubTask, Comment } from '@/types';
+
+// Генератор ID без uuid
+const generateId = () => {
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+};
 
 const route = useRoute();
 const router = useRouter();
 const projectsStore = useProjectsStore();
+const authStore = useAuthStore();
+const usersStore = useUsersStore();
 
 const projectId = Number(route.params.projectId);
 const taskIndex = Number(route.params.taskIndex);
@@ -194,6 +233,7 @@ const loading = ref(true);
 const error = ref('');
 const actionInProgress = ref(false);
 const showRenewOptions = ref(false);
+const showTaskComments = ref(false);
 
 // Прогресс задачи из базы (общий)
 const savedProgress = ref(0);
@@ -205,6 +245,22 @@ const showConfirmDialog = ref(false);
 
 // Дополнительный прогресс для отображения в breakdown
 const extraProgress = computed(() => sliderValue.value);
+
+// Проверка, является ли пользователь автором проекта
+const isTaskAuthor = computed(() => {
+  if (!authStore.userId || !project.value) return false;
+  return project.value.authors_ids.includes(authStore.userId);
+});
+
+// Комментарии текущей задачи
+const taskComments = computed(() => {
+  return task.value?.comments || [];
+});
+
+// Количество непрочитанных комментариев к задаче
+const unreadTaskCommentsCount = computed(() => {
+  return taskComments.value.filter(c => !c.isRead).length;
+});
 
 // Вспомогательные функции
 function parseDate(dateStr?: string): Date | null {
@@ -277,9 +333,7 @@ onMounted(async () => {
         const completedSum = loadedTask.subtasks
           .filter((st: SubTask) => st.completed)
           .reduce((sum: number, st: SubTask) => sum + (st.progressPercent || 0), 0);
-        // sliderValue = общий прогресс - сумма подзадач
         sliderValue.value = Math.max(0, savedProgress.value - completedSum);
-        // Но при этом оно не должно превышать maxExtra (автоматически)
       } else {
         sliderValue.value = savedProgress.value;
       }
@@ -361,7 +415,7 @@ const taskStatusClass = computed(() => {
   return '';
 });
 
-// --- Методы ---
+// --- Методы для задач ---
 
 // Переключение подзадачи
 const toggleSubtask = async (subtask: SubTask) => {
@@ -380,7 +434,6 @@ const toggleSubtask = async (subtask: SubTask) => {
       .filter(st => st.completed)
       .reduce((sum, st) => sum + (st.progressPercent || 0), 0);
 
-    // Корректируем sliderValue, чтобы он не превышал новый максимум
     if (sliderValue.value > (100 - newCompletedSum)) {
       sliderValue.value = 100 - newCompletedSum;
     }
@@ -448,6 +501,80 @@ const updateTaskStatus = async (newStatus: string) => {
   }
 };
 
+// --- Функции для работы с комментариями ---
+
+// Добавление комментария к задаче
+const addTaskComment = async (content: string) => {
+  if (!project.value || !task.value || !authStore.user) return;
+  
+  const newComment: Comment = {
+    id: generateId(),
+    authorId: authStore.user.id,
+    content,
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  
+  const updatedComments = [...(task.value.comments || []), newComment];
+  const updatedTask = { ...task.value, comments: updatedComments };
+  
+  const updatedTasks = [...project.value.tasks];
+  updatedTasks[taskIndex] = updatedTask;
+  
+  try {
+    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
+    
+    task.value = updatedTask;
+    project.value.tasks = updatedTasks;
+  } catch (error) {
+    console.error('Failed to add comment:', error);
+    alert('Ошибка при добавлении комментария');
+  }
+};
+
+// Отметка комментария задачи как прочитанного
+const markTaskCommentAsRead = async (commentId: string) => {
+  if (!task.value || !isTaskAuthor.value) return;
+  
+  const updatedComments = (task.value.comments || []).map(c => 
+    c.id === commentId ? { ...c, isRead: true } : c
+  );
+  
+  const updatedTask = { ...task.value, comments: updatedComments };
+  const updatedTasks = [...project.value.tasks];
+  updatedTasks[taskIndex] = updatedTask;
+  
+  try {
+    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
+    
+    task.value = updatedTask;
+    project.value.tasks = updatedTasks;
+  } catch (error) {
+    console.error('Failed to mark comment as read:', error);
+  }
+};
+
+// Удаление комментария задачи
+const deleteTaskComment = async (commentId: string) => {
+  if (!task.value || !project.value) return;
+  
+  const updatedComments = (task.value.comments || []).filter(c => c.id !== commentId);
+  const updatedTask = { ...task.value, comments: updatedComments };
+  
+  const updatedTasks = [...project.value.tasks];
+  updatedTasks[taskIndex] = updatedTask;
+  
+  try {
+    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
+    
+    task.value = updatedTask;
+    project.value.tasks = updatedTasks;
+  } catch (error) {
+    console.error('Failed to delete comment:', error);
+    alert('Ошибка при удалении комментария');
+  }
+};
+
 // Диалог подтверждения изменения дополнительного прогресса
 const openConfirmDialog = () => {
   oldSliderValue.value = sliderValue.value;
@@ -483,7 +610,6 @@ const confirmExtraChange = async () => {
   } catch (err) {
     console.error('Ошибка при обновлении прогресса:', err);
     alert('Не удалось изменить прогресс');
-    // Восстанавливаем sliderValue из savedProgress
     sliderValue.value = savedProgress.value - completedSubtasksPercent.value;
   } finally {
     actionInProgress.value = false;
@@ -622,6 +748,66 @@ const goHome = () => router.push('/main');
   margin-top: 4px;
 }
 
+/* ---------- Стили для комментариев ---------- */
+.comments-main-section {
+  margin-bottom: 28px;
+  padding-bottom: 20px;
+  border-bottom: 2px dashed var(--border-color);
+}
+
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.comment-toggle-btn {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 30px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  box-shadow: var(--shadow);
+}
+
+.comment-toggle-btn:hover {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+
+.btn-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-icon {
+  font-size: 1.1rem;
+}
+
+.header-unread-badge {
+  background: #f44336;
+  color: white;
+  border-radius: 50%;
+  min-width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
 /* ---------- Диаграмма Ганта ---------- */
 .gantt-section {
   margin-top: 40px;
@@ -659,18 +845,17 @@ const goHome = () => router.push('/main');
   transition: width 0.3s ease;
 }
 
-/* Новый стиль для процента на полосе */
 .gantt-percent {
   position: absolute;
   left: 10px;
   font-size: 0.85rem;
-  color: #3b82f6; /* синий */
+  color: #3b82f6;
   background: rgba(0, 0, 0, 0.5);
   padding: 2px 8px;
   border-radius: 12px;
   font-weight: 500;
   z-index: 1;
-  pointer-events: none; /* чтобы не мешать кликам */
+  pointer-events: none;
 }
 
 .light-theme .gantt-percent {
@@ -842,7 +1027,7 @@ const goHome = () => router.push('/main');
   -webkit-appearance: none;
   -moz-appearance: none;
   appearance: none;
-  background: #3b82f6; /* синий трек */
+  background: #3b82f6;
   border-radius: 4px;
   outline: none;
   transition: background 0.2s ease;
@@ -852,7 +1037,7 @@ const goHome = () => router.push('/main');
   -webkit-appearance: none;
   width: 20px;
   height: 20px;
-  background: #3b82f6; /* синий бегунок */
+  background: #3b82f6;
   border-radius: 50%;
   cursor: pointer;
   box-shadow: 0 2px 6px var(--shadow);
@@ -862,7 +1047,7 @@ const goHome = () => router.push('/main');
 
 .progress-slider::-webkit-slider-thumb:hover {
   transform: scale(1.15);
-  background: #2563eb; /* чуть темнее при наведении */
+  background: #2563eb;
 }
 
 .progress-slider::-moz-range-thumb {
@@ -881,7 +1066,7 @@ const goHome = () => router.push('/main');
 }
 
 .progress-slider::-moz-range-track {
-  background: #3b82f6; /* синий трек для Firefox */
+  background: #3b82f6;
   height: 8px;
   border-radius: 4px;
 }

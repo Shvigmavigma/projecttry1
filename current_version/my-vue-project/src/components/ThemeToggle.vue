@@ -1,20 +1,18 @@
 <template>
-  <button 
-    class="theme-toggle" 
-    @click="toggleTheme" 
-    :title="`Переключить на ${isDark ? 'светлую' : 'тёмную'} тему`"
-  >
+  <button class="theme-toggle" @click="toggleTheme" :title="isDark ? 'Светлая тема' : 'Темная тема'">
     {{ isDark ? '☀️' : '🌙' }}
   </button>
 </template>
 
 <script setup lang="ts">
 import { useThemeStore } from '@/stores/theme';
-import { storeToRefs } from 'pinia';
 
 const themeStore = useThemeStore();
-const { isDark } = storeToRefs(themeStore);
-const { toggleTheme } = themeStore;
+const isDark = themeStore.isDark;
+
+const toggleTheme = () => {
+  themeStore.toggleTheme();
+};
 </script>
 
 <style scoped>
@@ -26,15 +24,17 @@ const { toggleTheme } = themeStore;
   height: 44px;
   font-size: 1.5rem;
   cursor: pointer;
-  box-shadow: var(--shadow);
-  transition: all 0.2s ease;
-  color: var(--text-primary);
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: all 0.2s;
+  color: var(--text-primary);
+  padding: 0;
+  margin: 0;
 }
 
 .theme-toggle:hover {
   transform: scale(1.1);
+  box-shadow: var(--shadow-strong);
 }
 </style>

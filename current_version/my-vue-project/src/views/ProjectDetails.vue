@@ -63,7 +63,6 @@
               <div class="links-buttons">
                 <!-- GitHub -->
                 <template v-if="project.links?.github">
-                  <!-- Режим отображения существующей ссылки с кнопками редактирования/удаления -->
                   <div v-if="!showEditGithub" class="link-display">
                     <a
                       :href="project.links.github"
@@ -79,7 +78,6 @@
                       <button class="link-delete" @click="deleteGithubLink" title="Удалить">✖</button>
                     </div>
                   </div>
-                  <!-- Режим редактирования существующей ссылки -->
                   <div v-else class="link-input-wrapper">
                     <input
                       v-model="githubEditValue"
@@ -92,7 +90,6 @@
                     <button class="link-cancel" @click="cancelEditGithub">✖</button>
                   </div>
                 </template>
-                <!-- Добавление новой ссылки GitHub -->
                 <template v-else>
                   <div v-if="showGithubInput" class="link-input-wrapper">
                     <input
@@ -200,7 +197,36 @@
 
           <!-- Правая колонка: активные задачи и диаграмма Ганта -->
           <div class="tasks-column">
-            <h3>Активные задачи</h3>
+            <!-- Заголовок с кнопкой комментариев на одном уровне -->
+            <div class="tasks-header">
+              <h3>Активные задачи</h3>
+              <button 
+                v-if="isAuthor" 
+                class="comments-header-btn"
+                @click="showProjectComments = !showProjectComments"
+              >
+                <span class="btn-content">
+                  <span class="comment-icon">💬</span>
+                  {{ showProjectComments ? 'Скрыть комментарии' : 'Показать комментарии' }}
+                  <span v-if="unreadProjectCommentsCount > 0" class="header-unread-badge">
+                    {{ unreadProjectCommentsCount }}
+                  </span>
+                </span>
+              </button>
+            </div>
+
+            <!-- Блок комментариев проекта (появляется под заголовком) -->
+            <div v-if="showProjectComments && isAuthor" class="comments-container">
+              <CommentsSection
+                :comments="project.comments || []"
+                :can-comment="isAuthor"
+                :is-author="isAuthor"
+                :on-add-comment="addProjectComment"
+                :on-mark-as-read="markProjectCommentAsRead"
+                :on-delete-comment="deleteProjectComment"
+              />
+            </div>
+
             <div v-if="activeTasks.length" class="task-tree">
               <div
                 v-for="task in activeTasks"
@@ -258,10 +284,12 @@ import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Project, User, Task } from '@/types';
+import CommentsSection from '@/components/CommentsSection.vue';
+import type { Project, User, Task, Comment } from '@/types';
 import axios from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 
-// Импорт иконок (после переименования)
+// Импорт иконок
 import githubIcon from '@/assets/icons/icons8-github-30.png';
 import driveIcon from '@/assets/icons/icons8-google-drive-48.png';
 
@@ -277,14 +305,15 @@ const project = ref<Project | null>(null);
 const loading = ref(true);
 const error = ref('');
 const authors = ref<User[]>([]);
+const showProjectComments = ref(false);
 
-// Состояния для ввода ссылок (добавление)
+// Состояния для ввода ссылок
 const showGithubInput = ref(false);
 const githubInput = ref('');
 const showDriveInput = ref(false);
 const driveInput = ref('');
 
-// Состояния для редактирования существующих ссылок
+// Состояния для редактирования ссылок
 const showEditGithub = ref(false);
 const githubEditValue = ref('');
 const showEditDrive = ref(false);
@@ -295,7 +324,12 @@ const isAuthor = computed(() => {
   return project.value.authors_ids.includes(authStore.userId);
 });
 
-// Загрузка данных авторов по их ID
+// Количество непрочитанных комментариев
+const unreadProjectCommentsCount = computed(() => {
+  return (project.value?.comments || []).filter(c => !c.isRead).length;
+});
+
+// Загрузка данных авторов
 async function loadAuthors(ids: number[]) {
   if (ids.length === 0) {
     authors.value = [];
@@ -337,7 +371,7 @@ watch(() => project.value, (newProject) => {
   }
 });
 
-// Парсинг даты из строки "DD.MM.YYYY"
+// Парсинг даты
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
@@ -347,7 +381,7 @@ function parseDate(dateStr: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
-// Форматирование дат для отображения (с поддержкой старого формата)
+// Форматирование дат для отображения
 function formatTaskDates(task: Task): string {
   if (task.timelinend) {
     return `${task.timeline || '?'} – ${task.timelinend}`;
@@ -358,7 +392,7 @@ function formatTaskDates(task: Task): string {
   return task.timeline || '?';
 }
 
-// Вспомогательные функции для статуса задачи
+// Функции для статуса задачи
 function isTaskOverdue(task: Task): boolean {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -430,7 +464,7 @@ function taskStatusClass(task: Task): string {
   return '';
 }
 
-// --- РАЗДЕЛЕНИЕ ЗАДАЧ ---
+// Разделение задач
 const activeTasks = computed<Task[]>(() => {
   if (!project.value || !project.value.tasks) return [];
   return project.value.tasks.filter(task => task.status !== 'выполнена');
@@ -441,7 +475,7 @@ const completedTasks = computed<Task[]>(() => {
   return project.value.tasks.filter(task => task.status === 'выполнена');
 });
 
-// Прогресс для активных задач (для диаграммы Ганта)
+// Прогресс для активных задач
 const activeTasksProgress = computed(() => {
   if (!project.value || !activeTasks.value) return [];
   const today = new Date();
@@ -512,7 +546,7 @@ const activeTasksProgress = computed(() => {
   });
 });
 
-// --- МЕТОД ДЛЯ ПЕРЕХОДА К ЗАДАЧЕ ---
+// Переход к задаче
 const goToTask = (task: Task) => {
   if (!project.value || !project.value.tasks) return;
   const index = project.value.tasks.findIndex(t => t === task);
@@ -620,7 +654,68 @@ async function deleteDriveLink() {
   }
 }
 
-// --- УДАЛЕНИЕ ПРОЕКТА ---
+// --- Функции для работы с комментариями ---
+const addProjectComment = async (content: string) => {
+  if (!project.value || !authStore.user) return;
+  
+  const newComment: Comment = {
+    id: uuidv4(),
+    authorId: authStore.user.id,
+    content,
+    createdAt: new Date().toISOString(),
+    isRead: false
+  };
+  
+  const updatedComments = [...(project.value.comments || []), newComment];
+  
+  try {
+    await axios.put(`${baseUrl}/projects/${project.value.id}`, {
+      comments: updatedComments
+    });
+    
+    project.value.comments = updatedComments;
+  } catch (error) {
+    console.error('Failed to add comment:', error);
+    alert('Ошибка при добавлении комментария');
+  }
+};
+
+const markProjectCommentAsRead = async (commentId: string) => {
+  if (!project.value || !isAuthor.value) return;
+  
+  const updatedComments = (project.value.comments || []).map(c => 
+    c.id === commentId ? { ...c, isRead: true } : c
+  );
+  
+  try {
+    await axios.put(`${baseUrl}/projects/${project.value.id}`, {
+      comments: updatedComments
+    });
+    
+    project.value.comments = updatedComments;
+  } catch (error) {
+    console.error('Failed to mark comment as read:', error);
+  }
+};
+
+const deleteProjectComment = async (commentId: string) => {
+  if (!project.value) return;
+  
+  const updatedComments = (project.value.comments || []).filter(c => c.id !== commentId);
+  
+  try {
+    await axios.put(`${baseUrl}/projects/${project.value.id}`, {
+      comments: updatedComments
+    });
+    
+    project.value.comments = updatedComments;
+  } catch (error) {
+    console.error('Failed to delete comment:', error);
+    alert('Ошибка при удалении комментария');
+  }
+};
+
+// --- Удаление проекта ---
 const deleteProject = async () => {
   if (!project.value) return;
   if (confirm('Вы уверены, что хотите удалить проект?')) {
@@ -634,7 +729,7 @@ const deleteProject = async () => {
   }
 };
 
-// --- МЕТОДЫ НАВИГАЦИИ ---
+// --- Навигация ---
 const goToEdit = () => {
   router.push(`/project/edit/${route.params.id}`);
 };
@@ -668,7 +763,6 @@ const goToUser = (userId: number) => {
   gap: 10px;
 }
 
-/* Для авторов в шапке только кнопки */
 .author-header {
   justify-content: flex-end;
 }
@@ -709,7 +803,7 @@ const goToUser = (userId: number) => {
   background: rgba(0, 0, 0, 0.05);
 }
 
-/* Общие стили для секций */
+/* Общие стили */
 .project-section {
   margin-bottom: 28px;
 }
@@ -725,7 +819,6 @@ const goToUser = (userId: number) => {
   line-height: 1.6;
 }
 
-/* Список авторов */
 .authors-list {
   display: flex;
   flex-wrap: wrap;
@@ -744,7 +837,7 @@ const goToUser = (userId: number) => {
   color: var(--link-hover);
 }
 
-/* ----- Макет для НЕ-авторов ----- */
+/* Макеты */
 .non-author-layout {
   max-width: 800px;
   margin: 0 auto;
@@ -758,7 +851,6 @@ const goToUser = (userId: number) => {
   transition: background 0.3s;
 }
 
-/* ----- Макет для АВТОРОВ ----- */
 .author-layout {
   max-width: 1200px;
   margin: 0 auto;
@@ -795,18 +887,133 @@ const goToUser = (userId: number) => {
   transition: background 0.3s;
 }
 
-.tasks-column h3 {
-  color: var(--heading-color);
+/* Заголовок задач с кнопкой комментариев */
+.tasks-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   margin-bottom: 20px;
+}
+
+.tasks-header h3 {
+  color: var(--heading-color);
   font-weight: 500;
   font-size: 1.5rem;
-  text-align: center;
+  margin: 0;
+}
+
+.comments-header-btn {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 30px;
+  padding: 8px 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  box-shadow: var(--shadow);
+}
+
+.comments-header-btn:hover {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+
+.btn-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.comment-icon {
+  font-size: 1.1rem;
+}
+
+.header-unread-badge {
+  background: #f44336;
+  color: white;
+  border-radius: 50%;
+  min-width: 20px;
+  height: 20px;
+  font-size: 11px;
+  font-weight: bold;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  margin-left: 4px;
+}
+
+/* Контейнер для комментариев - исправлен для попадания в рамку */
+.comments-container {
+  margin-bottom: 25px;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  overflow: hidden;
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg-card);
+}
+
+/* Стили для внутреннего компонента CommentsSection */
+.comments-container :deep(.comments-section) {
+  margin-top: 0;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  padding: 0 15px;
+}
+
+/* Заголовок комментариев */
+.comments-container :deep(.comments-section .comments-header) {
+  margin-top: 0;
+  padding-top: 15px;
+  padding-bottom: 10px;
+  margin-bottom: 10px;
+}
+
+/* Список комментариев */
+.comments-container :deep(.comments-section .comments-list) {
+  max-height: 350px;
+  overflow-y: auto;
+  padding-right: 5px;
+  margin-bottom: 0;
+}
+
+/* Последний комментарий */
+.comments-container :deep(.comments-section .comments-list .comment-item:last-child) {
+  margin-bottom: 5px;
+}
+
+/* Сообщение об отсутствии комментариев */
+.comments-container :deep(.comments-section .no-comments) {
+  padding: 20px 15px;
+  margin-bottom: 0;
+}
+
+/* Форма добавления комментария */
+.comments-container :deep(.comments-section .add-comment-form) {
+  margin: 10px 0 15px 0;
+  padding: 15px;
+  background: var(--bg-page);
+  border-radius: 12px;
+}
+
+/* Кнопка добавления комментария */
+.comments-container :deep(.comments-section .add-comment-button) {
+  margin-right: 0;
 }
 
 .task-tree {
   display: flex;
   flex-direction: column;
   gap: 15px;
+  margin-top: 20px;
 }
 
 .task-node {
@@ -827,7 +1034,6 @@ const goToUser = (userId: number) => {
   box-shadow: var(--shadow-strong);
 }
 
-/* Классы состояния задач */
 .task-node.task-overdue {
   background-color: var(--overdue-bg);
   border-left-color: #f44336;
@@ -988,19 +1194,7 @@ const goToUser = (userId: number) => {
   background-color: transparent;
 }
 
-.light-theme .gantt-text {
-  text-shadow: 0 0 2px rgba(255, 255, 255, 0.7);
-}
-
-.loading,
-.error {
-  text-align: center;
-  color: var(--text-primary);
-  font-size: 1.2rem;
-  padding: 40px;
-}
-
-/* Стили для выполненных задач */
+/* Выполненные задачи */
 .completed-tasks {
   display: flex;
   flex-direction: column;
@@ -1034,7 +1228,7 @@ const goToUser = (userId: number) => {
   margin-top: 4px;
 }
 
-/* Кнопки управления проектом */
+/* Кнопки управления */
 .project-actions {
   margin-top: 30px;
   display: flex;
@@ -1080,7 +1274,7 @@ const goToUser = (userId: number) => {
   box-shadow: var(--shadow-strong);
 }
 
-/* Стили для блока ссылок проекта */
+/* Ссылки проекта */
 .project-links {
   margin-bottom: 28px;
 }
@@ -1118,7 +1312,6 @@ const goToUser = (userId: number) => {
   object-fit: contain;
 }
 
-/* Кнопки добавления */
 .add-github,
 .add-drive {
   background: var(--bg-card);
@@ -1133,7 +1326,6 @@ const goToUser = (userId: number) => {
   box-shadow: var(--shadow);
 }
 
-/* Поле ввода ссылки */
 .link-input-wrapper {
   display: flex;
   gap: 4px;
@@ -1152,10 +1344,6 @@ const goToUser = (userId: number) => {
   color: var(--text-primary);
   font-size: 0.95rem;
   outline: none;
-}
-
-.link-input::placeholder {
-  color: var(--text-secondary);
 }
 
 .link-save,
@@ -1206,7 +1394,6 @@ const goToUser = (userId: number) => {
   background: rgba(244, 67, 54, 0.2);
 }
 
-/* Контейнер для отображения существующей ссылки и кнопок */
 .link-display {
   display: flex;
   align-items: center;
@@ -1218,9 +1405,8 @@ const goToUser = (userId: number) => {
   gap: 4px;
 }
 
-/* Цвета ссылок (исправлены) */
 .github-link {
-  background: #24292e; /* GitHub */
+  background: #24292e;
   color: white;
 }
 
@@ -1231,7 +1417,7 @@ const goToUser = (userId: number) => {
 }
 
 .drive-link {
-  background: #4285f4; /* Google Drive */
+  background: #4285f4;
   color: white;
 }
 
@@ -1239,5 +1425,13 @@ const goToUser = (userId: number) => {
   background: #3367d6;
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
+}
+
+.loading,
+.error {
+  text-align: center;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  padding: 40px;
 }
 </style>

@@ -13,12 +13,21 @@ export interface User {
   updated_at?: string;
 }
 
+export interface Comment {
+  id: string;
+  authorId: number;
+  content: string;
+  createdAt: string;
+  isRead: boolean;
+}
+
 export interface SubTask {
   id: string;         
   title: string;
   description?: string;
   progressPercent: number; 
   completed: boolean;
+  comments?: Comment[];
 }
 
 export interface Task {
@@ -29,6 +38,7 @@ export interface Task {
   timelinend?: string;
   progress?: number;   
   subtasks?: SubTask[];
+  comments?: Comment[];
 }
 
 export interface Project {
@@ -39,6 +49,7 @@ export interface Project {
   authors_ids: number[];
   tasks: Task[];
   links?: ProjectLinks;
+  comments?: Comment[];
 }
 
 export type ProjectCreate = Omit<Project, 'id'>;
@@ -49,6 +60,8 @@ export interface ProjectUpdate {
   underbody?: string;
   tasks?: Task[];
   author_id?: number;
+  links?: ProjectLinks;
+  comments?: Comment[];
 }
 
 export interface ProjectLinks {

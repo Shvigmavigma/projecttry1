@@ -3,6 +3,14 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict
 from typing import Optional, Dict, Any, List
 from datetime import datetime
 
+# ---------- Comment Schema ----------
+class Comment(BaseModel):
+    id: str
+    authorId: int
+    content: str
+    createdAt: str
+    isRead: bool
+
 # ---------- User ----------
 class UserBase(BaseModel):
     nickname: str
@@ -73,6 +81,7 @@ class ProjectBase(BaseModel):
         default=None,
         json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
     )
+    comments: List[Comment] = Field(default=[], description="Комментарии к проекту")
 
 class ProjectCreate(ProjectBase):
     authors_ids: List[int] = Field(..., description="Список ID всех авторов")
@@ -93,6 +102,7 @@ class ProjectUpdate(BaseModel):
         default=None,
         json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
     )
+    comments: Optional[List[Comment]] = Field(default=None, description="Комментарии к проекту")
 
 # ---------- Email верификация ----------
 class EmailVerificationCodeRequest(BaseModel):

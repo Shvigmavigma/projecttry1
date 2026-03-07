@@ -33,3 +33,4 @@ class Project(Base):
     authors_ids = Column(JSON, nullable=False, default=list) 
     tasks = Column(JSON, default=list)
     links = Column(JSON, default=dict)
+    comments= Column(JSON, default=list)

@@ -20,11 +20,18 @@ load_dotenv()
 from models import Base, User, Project
 from database import engine, session_local
 from schemas import (
+
     UserResponse, UserCreate, UserUpdate, LoginRequest,
+
     TeacherCreate, TeacherResponse,
+
     ProjectResponse, ProjectCreate, ProjectUpdate,
+
+    Comment,
+
     EmailVerificationCodeRequest, EmailVerificationRequest,
     PasswordResetRequest, PasswordResetConfirm,
+
     TokenResponse
 )
 
@@ -330,6 +337,8 @@ async def update_project(project_id: int, project_update: ProjectUpdate, db: Ses
         project.tasks = project_update.tasks
     if project_update.links is not None:
         project.links = project_update.links
+    if project_update.comments is not None: 
+        project.comments = [comment.dict() for comment in project_update.comments]  # Конвертируем Pydantic модели в словари
 
     if project_update.authors_ids is not None:
         users = db.query(User).filter(User.id.in_(project_update.authors_ids)).all()
