@@ -61,16 +61,48 @@ const verifying = ref(false)
 const success = ref(false)
 const error = ref('')
 const errorDetails = ref('')
+const hasCheckedData = ref(false)
 
 onMounted(() => {
+  checkPendingData()
+})
+
+function checkPendingData() {
   const pendingData = sessionStorage.getItem('pending_registration')
   console.log('Проверка sessionStorage на VerifyEmail:', pendingData ? 'Данные найдены' : 'Данные не найдены')
+  console.log('Email из URL:', email.value)
   
   if (!pendingData) {
-    error.value = 'Данные регистрации не найдены'
-    errorDetails.value = 'Пожалуйста, начните регистрацию заново'
+    // Проверяем, есть ли email в URL, но нет данных
+    if (email.value) {
+      error.value = 'Данные регистрации не найдены'
+      errorDetails.value = 'Возможно, сессия истекла. Пожалуйста, начните регистрацию заново.'
+    } else {
+      error.value = 'Отсутствует email для подтверждения'
+      errorDetails.value = 'Пожалуйста, начните регистрацию заново.'
+    }
+  } else {
+    // Проверяем, соответствует ли email в URL email в сохраненных данных
+    try {
+      const userData = JSON.parse(pendingData)
+      if (userData.email !== email.value) {
+        console.warn('Email в URL не совпадает с email в данных:', userData.email, email.value)
+        error.value = 'Несоответствие email'
+        errorDetails.value = 'Email в ссылке не совпадает с email при регистрации. Пожалуйста, начните заново.'
+        sessionStorage.removeItem('pending_registration')
+        sessionStorage.removeItem('pending_avatar')
+      }
+    } catch (e) {
+      console.error('Ошибка парсинга данных:', e)
+      sessionStorage.removeItem('pending_registration')
+      sessionStorage.removeItem('pending_avatar')
+      error.value = 'Ошибка данных'
+      errorDetails.value = 'Поврежденные данные регистрации. Пожалуйста, начните заново.'
+    }
   }
-})
+  
+  hasCheckedData.value = true
+}
 
 async function verifyCode() {
   if (!code.value || code.value.length !== 6) {
@@ -93,12 +125,14 @@ async function verifyCode() {
     const userData = JSON.parse(pendingData)
     console.log('Данные пользователя из sessionStorage:', userData)
     
+    // Формируем запрос к бэкенду
     const response = await axios.post(
       'http://localhost:8000/auth/register-with-verification',
       {
         email: email.value,
         code: code.value,
-        user_data: userData
+        user_data: userData,
+        is_teacher: userData.is_teacher || false // явно передаём флаг учителя
       }
     )
     
@@ -108,7 +142,24 @@ async function verifyCode() {
     const pendingAvatar = sessionStorage.getItem('pending_avatar')
     if (pendingAvatar && response.data.id) {
       try {
-        const blob = await fetch(pendingAvatar).then(res => res.blob())
+        // Конвертируем base64 в Blob
+        const base64Data = pendingAvatar.split(',')[1]
+        const byteCharacters = atob(base64Data)
+        const byteArrays = []
+        
+        for (let offset = 0; offset < byteCharacters.length; offset += 512) {
+          const slice = byteCharacters.slice(offset, offset + 512)
+          
+          const byteNumbers = new Array(slice.length)
+          for (let i = 0; i < slice.length; i++) {
+            byteNumbers[i] = slice.charCodeAt(i)
+          }
+          
+          const byteArray = new Uint8Array(byteNumbers)
+          byteArrays.push(byteArray)
+        }
+        
+        const blob = new Blob(byteArrays, { type: 'image/webp' })
         const file = new File([blob], 'avatar.webp', { type: 'image/webp' })
         
         const formData = new FormData()
@@ -122,9 +173,11 @@ async function verifyCode() {
         console.log('Аватарка загружена')
       } catch (avatarError) {
         console.error('Ошибка загрузки аватарки:', avatarError)
+        // Не прерываем регистрацию из-за ошибки аватарки
       }
     }
     
+    // Очищаем временные данные
     sessionStorage.removeItem('pending_registration')
     sessionStorage.removeItem('pending_avatar')
     
@@ -137,8 +190,23 @@ async function verifyCode() {
     if (err.code === 'ERR_NETWORK') {
       error.value = 'Ошибка сети. Проверьте подключение к серверу.'
     } else if (err.response) {
-      error.value = err.response.data?.detail || 'Ошибка сервера'
-      errorDetails.value = JSON.stringify(err.response.data)
+      // Обработка конкретных ошибок от сервера
+      if (err.response.status === 400) {
+        if (err.response.data?.detail === 'Invalid or expired verification code') {
+          error.value = 'Неверный или истекший код подтверждения'
+          errorDetails.value = 'Попробуйте запросить код повторно'
+        } else if (err.response.data?.detail === 'Nickname or email already registered') {
+          error.value = 'Пользователь с таким никнеймом или email уже существует'
+          errorDetails.value = 'Попробуйте войти или используйте другие данные'
+        } else {
+          error.value = err.response.data?.detail || 'Ошибка при регистрации'
+        }
+      } else if (err.response.status === 403) {
+        error.value = 'Email не разрешен для регистрации учителя'
+        errorDetails.value = 'Пожалуйста, используйте email из списка разрешенных'
+      } else {
+        error.value = err.response.data?.detail || 'Ошибка сервера'
+      }
     } else {
       error.value = err.message || 'Неизвестная ошибка'
     }
@@ -148,21 +216,42 @@ async function verifyCode() {
 }
 
 async function resendCode() {
+  if (!email.value) {
+    error.value = 'Email не указан'
+    return
+  }
+  
   verifying.value = true
   error.value = ''
+  
   try {
-    await axios.post('http://localhost:8000/auth/request-verification-code', {
+    const response = await axios.post('http://localhost:8000/auth/request-verification-code', {
       email: email.value
     })
     alert('Код отправлен повторно')
   } catch (err: any) {
-    error.value = err.response?.data?.detail || 'Ошибка при отправке кода'
+    console.error('Ошибка при повторной отправке:', err)
+    
+    if (err.response?.status === 400) {
+      if (err.response.data?.detail === 'Email already registered') {
+        error.value = 'Этот email уже зарегистрирован'
+        errorDetails.value = 'Попробуйте войти или восстановить пароль'
+      } else {
+        error.value = err.response.data?.detail || 'Ошибка при отправке кода'
+      }
+    } else if (err.code === 'ERR_NETWORK') {
+      error.value = 'Ошибка сети. Проверьте подключение к серверу.'
+    } else {
+      error.value = err.message || 'Ошибка при отправке кода'
+    }
   } finally {
     verifying.value = false
   }
 }
 
 function goBack() {
+  sessionStorage.removeItem('pending_registration')
+  sessionStorage.removeItem('pending_avatar')
   router.push('/register')
 }
 </script>
@@ -205,6 +294,7 @@ h2 {
   color: var(--accent-color);
   text-align: center;
   margin-bottom: 20px;
+  word-break: break-all;
 }
 
 .form-group {
@@ -257,6 +347,10 @@ button:disabled {
   border: 1px solid var(--border-color);
 }
 
+.back-button:hover:not(:disabled) {
+  background: var(--bg-page);
+}
+
 .success {
   color: #4caf50;
   text-align: center;
@@ -286,6 +380,7 @@ button:disabled {
 .resend a {
   color: var(--link-color);
   text-decoration: none;
+  cursor: pointer;
 }
 
 .resend a:hover {

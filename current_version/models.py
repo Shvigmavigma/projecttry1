@@ -22,6 +22,8 @@ class User(Base):
     is_verified = Column(Boolean, default=False)    # Подтвержден ли email
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    is_teacher = Column(Boolean, default=False, nullable=False) 
+    teacher_info = Column(JSON, nullable=True)
 
 class Project(Base):
     __tablename__ = "projects"

@@ -1,7 +1,7 @@
-# schemas.py
-from pydantic import BaseModel, EmailStr, Field, ConfigDict
+from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+from enum import Enum
 
 # ---------- Comment Schema ----------
 class Comment(BaseModel):
@@ -11,56 +11,110 @@ class Comment(BaseModel):
     createdAt: str
     isRead: bool
 
-# ---------- User ----------
+# ---------- User Base (общая база) ----------
 class UserBase(BaseModel):
     nickname: str
     fullname: str
+    email: EmailStr
+    avatar: Optional[str] = None
+    speciality: Optional[str] = None
+    is_teacher: bool = False  # По умолчанию ученик
+
+# ---------- Student (ученик) ----------
+class StudentBase(UserBase):
     class_: float = Field(
         0.0,
-        validation_alias="class",        
-        serialization_alias="class"     
+        alias="class",
+        validation_alias="class",
+        serialization_alias="class"
     )
-    speciality: Optional[str] = None
-    email: EmailStr
-    avatar: Optional[str] = None 
+    is_teacher: bool = False  # Переопределяем, чтобы всегда было False
 
-class UserResponse(UserBase):
+class StudentCreate(StudentBase):
+    password: str
+    
+    @field_validator('is_teacher')
+    def validate_is_teacher(cls, v):
+        if v is True:
+            raise ValueError('Student cannot be a teacher')
+        return v
+
+class StudentResponse(StudentBase):
     id: int
     is_active: Optional[bool] = None
     is_verified: Optional[bool] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    model_config = ConfigDict(
-        from_attributes=True,
-        populate_by_name=True           
-    )
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
-class UserCreate(UserBase):
-    password: str 
-
-class LoginRequest(BaseModel):
-    nickname: str
-    password: str
-
-class UserUpdate(BaseModel):
+class StudentUpdate(BaseModel):
     fullname: Optional[str] = None
     email: Optional[EmailStr] = None
-    class_: Optional[float] = Field(None, alias="class") 
+    class_: Optional[float] = Field(None, alias="class")
     speciality: Optional[str] = None
-    avatar: Optional[str] = None 
-
+    avatar: Optional[str] = None
     model_config = ConfigDict(populate_by_name=True)
 
-# ---------- Teacher ----------
+# ---------- Teacher (учитель) ----------
+class TeacherRole(str, Enum):
+    CUSTOMER = "customer"      # Заказчик
+    EXPERT = "expert"           # Эксперт
+    SUPERVISOR = "supervisor"   # Научный руководитель
+    # Куратор не включён в список, так как выбирается отдельным чекбоксом
+
+class TeacherInfo(BaseModel):
+    roles: List[TeacherRole] = Field(default=[], description="Роли учителя: заказчик, эксперт, научный руководитель")
+    curator: bool = Field(default=False, description="Является ли куратором (отдельная роль)")
+
 class TeacherBase(UserBase):
-    prof: str  
+    is_teacher: bool = True
+    teacher_info: TeacherInfo
+
 
 class TeacherCreate(TeacherBase):
     password: str
 
 class TeacherResponse(TeacherBase):
     id: int
+    is_active: Optional[bool] = None
+    is_verified: Optional[bool] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
     model_config = ConfigDict(from_attributes=True)
+
+class TeacherUpdate(BaseModel):
+    fullname: Optional[str] = None
+    email: Optional[EmailStr] = None
+    speciality: Optional[str] = None
+    avatar: Optional[str] = None
+    teacher_info: Optional[TeacherInfo] = None
+    model_config = ConfigDict(populate_by_name=True)
+
+# ---------- Общий пользователь (для списков и базовых операций) ----------
+class UserResponse(BaseModel):
+    id: int
+    nickname: str
+    fullname: str
+    email: EmailStr
+    avatar: Optional[str] = None
+    speciality: Optional[str] = None
+    is_active: bool
+    is_verified: bool
+    is_teacher: bool
+    # Поля, которые могут быть только у учеников
+    class_: Optional[float] = Field(None, alias="class")
+    # Поля, которые могут быть только у учителей
+    teacher_info: Optional[TeacherInfo] = None
+    
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
+
+# ---------- Auth ----------
+class LoginRequest(BaseModel):
+    nickname: str
+    password: str
 
 # ---------- Project ----------
 class ProjectBase(BaseModel):
