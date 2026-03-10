@@ -4,8 +4,16 @@
 
 <script setup lang="ts">
 import { useThemeStore } from './stores/theme';
-// Инициализация темы (добавляет классы на html)
+import { onMounted } from 'vue';
+import { useAuthStore } from './stores/auth';
+
 useThemeStore();
+const authStore = useAuthStore();
+
+onMounted(async () => {
+  await authStore.checkAuth();
+});
+
 </script>
 
 <style>
@@ -48,8 +56,8 @@ useThemeStore();
   --text-primary: #ffffff;
   --text-secondary: #a0aec0;
   --heading-color: #5ec089;
-  --accent-color: #0145ac;
-  --accent-hover: #013a8c;
+  --accent-color: #2c7ef9;
+  --accent-hover: #08387c;
   --link-color: #90cdf4;
   --link-hover: #5ec089;
   --border-color: #3a3f4b;

@@ -3,13 +3,29 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
 
-# ---------- Comment Schema ----------
+# ---------- Comment Schema (с полем hidden) ----------
 class Comment(BaseModel):
     id: str
     authorId: int
     content: str
     createdAt: str
     isRead: bool
+    hidden: bool = False                    # <-- новое поле
+
+# ---------- Project Roles ----------
+class ProjectRole(str, Enum):
+    CUSTOMER = "customer"      # Заказчик
+    SUPERVISOR = "supervisor"   # Научный руководитель
+    EXPERT = "expert"           # Эксперт
+    EXECUTOR = "executor"       # Исполнитель (студент)
+    CURATOR = "curator"         # Куратор
+
+# ---------- Participant ----------
+class Participant(BaseModel):
+    user_id: int
+    role: ProjectRole
+    joined_at: Optional[datetime] = Field(default_factory=datetime.utcnow)
+    invited_by: Optional[int] = None  # ID пригласившего пользователя
 
 # ---------- User Base (общая база) ----------
 class UserBase(BaseModel):
@@ -70,7 +86,6 @@ class TeacherBase(UserBase):
     is_teacher: bool = True
     teacher_info: TeacherInfo
 
-
 class TeacherCreate(TeacherBase):
     password: str
 
@@ -115,12 +130,37 @@ class UserResponse(BaseModel):
 class LoginRequest(BaseModel):
     nickname: str
     password: str
+# ---------- Suggestion (предложение) ----------
+class SuggestionStatus(str, Enum):
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REJECTED = "rejected"
 
+
+
+# Схема для создания предложения (без id, status, created_at, comments)
+class SuggestionCreate(BaseModel):
+    target_type: str
+    target_id: Optional[str] = None
+    changes: Dict[str, Any]
+class Suggestion(BaseModel):
+    id: str
+    author_id: int
+    target_type: str  # "project", "task", "link"
+    target_id: Optional[str] = None  # для задачи — её индекс или id
+    changes: Dict[str, Any]          # предлагаемые изменения
+    status: SuggestionStatus = SuggestionStatus.PENDING
+    created_at: datetime
+    comments: List[Comment] = []
 # ---------- Project ----------
 class ProjectBase(BaseModel):
     title: str = Field(..., min_length=1, json_schema_extra={"example": "Космическая программа"})
     body: str = Field(..., min_length=1, json_schema_extra={"example": "Подробное описание..."})
     underbody: str = Field("", json_schema_extra={"example": "Дополнительные материалы"})
+    participants: List[Participant] = Field(
+        default=[],
+        description="Список участников проекта с их ролями"
+    )
     tasks: List[Dict[str, Any]] = Field(
         default=[],
         json_schema_extra={
@@ -136,13 +176,14 @@ class ProjectBase(BaseModel):
         json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
     )
     comments: List[Comment] = Field(default=[], description="Комментарии к проекту")
+    suggestions: List[Suggestion] = [] 
 
 class ProjectCreate(ProjectBase):
-    authors_ids: List[int] = Field(..., description="Список ID всех авторов")
+    pass  # Все поля наследуются
 
 class ProjectResponse(ProjectBase):
     id: int
-    authors_ids: List[int] = Field(..., description="Список ID всех авторов проекта")
+    suggestions: List[Suggestion] = []   
     model_config = ConfigDict(from_attributes=True)
 
 class ProjectUpdate(BaseModel):
@@ -150,13 +191,9 @@ class ProjectUpdate(BaseModel):
     body: Optional[str] = None
     underbody: Optional[str] = None
     tasks: Optional[List[Dict[str, Any]]] = None
-    authors_ids: Optional[List[int]] = Field(None, description="Полный список ID авторов") 
-    author_id: Optional[int] = Field(None, description="ID автора для добавления к существующему списку")
-    links: Optional[Dict[str, str]] = Field(
-        default=None,
-        json_schema_extra={"example": {"github": "https://github.com/...", "google_drive": "https://drive.google.com/..."}}
-    )
-    comments: Optional[List[Comment]] = Field(default=None, description="Комментарии к проекту")
+    participants: Optional[List[Participant]] = None
+    links: Optional[Dict[str, str]] = None
+    comments: Optional[List[Comment]] = None
 
 # ---------- Email верификация ----------
 class EmailVerificationCodeRequest(BaseModel):
@@ -178,3 +215,18 @@ class TokenResponse(BaseModel):
     access_token: str
     refresh_token: str
     token_type: str = "bearer"
+
+
+
+# ---------- Invitation (приглашение) ----------
+class InvitationCreate(BaseModel):
+    email: str
+    role: ProjectRole
+
+class InvitationInfo(BaseModel):
+    token: str
+    project_id: int
+    project_title: str
+    role: ProjectRole
+    invited_by: int
+    expires_at: datetime

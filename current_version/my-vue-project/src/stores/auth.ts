@@ -52,6 +52,12 @@ export const useAuthStore = defineStore('auth', {
           data: error.response?.data,
           message: error.message
         });
+        
+        // Очищаем токены при ошибке входа
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        delete axios.defaults.headers.common['Authorization'];
+        
         return false;
       }
     },

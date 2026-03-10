@@ -32,16 +32,27 @@
           <span class="info-label">Email</span>
           <span class="info-value">{{ user.email }}</span>
         </div>
-        <div class="info-row">
-          <span class="info-label">Класс</span>
-          <span class="info-value">{{ user.class }}</span>
-        </div>
+
+        <!-- Для учителя показываем роли, для ученика – класс -->
+        <template v-if="user.is_teacher">
+          <div class="info-row" v-if="user.teacher_info">
+            <span class="info-label">Роли</span>
+            <span class="info-value">{{ formatTeacherRoles(user.teacher_info) }}</span>
+          </div>
+        </template>
+        <template v-else>
+          <div class="info-row">
+            <span class="info-label">Класс</span>
+            <span class="info-value">{{ user.class }}</span>
+          </div>
+        </template>
+
         <div class="info-row">
           <span class="info-label">Специальность</span>
           <span class="info-value">{{ user.speciality || 'не указана' }}</span>
         </div>
-        
-        <!-- Статус верификации email с понятным описанием -->
+
+        <!-- Статус верификации email -->
         <div class="info-row verification-status">
           <span class="info-label">Статус email</span>
           <span class="info-value" :class="user.is_verified ? 'verified' : 'unverified'">
@@ -49,12 +60,12 @@
             {{ user.is_verified ? 'Подтвержден' : 'Ожидает подтверждения' }}
           </span>
         </div>
-        
+
         <!-- Если email не подтвержден, показываем подсказку -->
         <div v-if="!user.is_verified" class="verification-hint">
           <p>✉️ Для полного доступа к функциям подтвердите email</p>
-          <button @click="resendVerification" class="resend-button">
-            Отправить код повторно
+          <button @click="resendVerification" class="resend-button" :disabled="resending">
+            {{ resending ? 'Отправка...' : 'Отправить код повторно' }}
           </button>
         </div>
       </div>
@@ -88,6 +99,7 @@ import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import AvatarModal from '@/components/AvatarModal.vue';
 import axios from 'axios';
+import type { TeacherInfo } from '@/types';
 
 const authStore = useAuthStore();
 const router = useRouter();
@@ -97,10 +109,8 @@ const showAvatarModal = ref(false);
 const deleting = ref(false);
 const resending = ref(false);
 
-// URL для аватарки (полный URL для гарантии загрузки)
 const avatarUrl = computed(() => {
   if (!user.value?.avatar) return '';
-  // Используем полный URL для надежности
   return `http://localhost:8000/avatars/${user.value.avatar}`;
 });
 
@@ -111,10 +121,7 @@ onMounted(async () => {
       router.push('/login');
     }
   }
-  // Добавьте для отладки
   console.log('Profile mounted - user:', user.value);
-  console.log('is_verified:', user.value?.is_verified);
-  console.log('isAuthenticated:', authStore.isAuthenticated);
 });
 
 const openAvatarModal = () => {
@@ -174,21 +181,17 @@ const resendVerification = async () => {
   if (!user.value?.email) return;
   resending.value = true;
   try {
-    // Пробуем отправить запрос на повторную отправку
     await axios.post('/auth/resend-verification-code', {
       email: user.value.email
     });
     alert('✅ Код подтверждения отправлен на вашу почту');
   } catch (error: any) {
     console.error('Error resending code:', error);
-    
-    // Обрабатываем разные ошибки
     if (error.response) {
       switch (error.response.status) {
         case 400:
           if (error.response.data?.detail === 'Email already verified') {
             alert('✅ Ваш email уже подтвержден');
-            // Обновляем данные пользователя
             await authStore.checkAuth();
           } else {
             alert(`❌ ${error.response.data?.detail || 'Ошибка запроса'}`);
@@ -209,6 +212,16 @@ const resendVerification = async () => {
     resending.value = false;
   }
 };
+
+// Вспомогательная функция для форматирования ролей учителя
+function formatTeacherRoles(teacherInfo: TeacherInfo): string {
+  const roleNames: string[] = [];
+  if (teacherInfo.roles.includes('supervisor')) roleNames.push('Научный руководитель');
+  if (teacherInfo.roles.includes('expert')) roleNames.push('Эксперт');
+  if (teacherInfo.roles.includes('customer')) roleNames.push('Заказчик');
+  if (teacherInfo.curator) roleNames.push('Куратор');
+  return roleNames.join(', ') || 'Роли не назначены';
+}
 </script>
 
 <style scoped>
@@ -369,6 +382,7 @@ const resendVerification = async () => {
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  font-weight: normal;
 }
 
 .verification-status {
@@ -380,16 +394,17 @@ const resendVerification = async () => {
 
 .status-icon {
   font-size: 1.2rem;
+  margin-right: 4px;
 }
 
 .info-value.verified {
   color: #4caf50;
-  font-weight: 600;
+  font-weight: normal;
 }
 
 .info-value.unverified {
   color: #ff9800;
-  font-weight: 600;
+  font-weight: normal;
 }
 
 .verification-hint {
@@ -419,7 +434,7 @@ const resendVerification = async () => {
   transition: all 0.2s;
 }
 
-.resend-button:hover {
+.resend-button:hover:not(:disabled) {
   background: var(--accent-color);
   color: var(--button-text);
 }
@@ -480,7 +495,6 @@ const resendVerification = async () => {
   transform: scale(0.98);
 }
 
-/* Кнопка удаления аккаунта в правом нижнем углу экрана (фиксированная) */
 .delete-account-button {
   position: fixed;
   bottom: 20px;
@@ -511,85 +525,5 @@ const resendVerification = async () => {
 .delete-account-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-  .profile-info {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  margin-bottom: 32px;
-}
-
-.info-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--border-color);
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  gap: 10px;
-}
-
-.info-label {
-  font-weight: 600;
-  color: var(--text-secondary);
-  font-size: 1rem;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  min-width: 120px;
-  flex-shrink: 0;
-}
-
-.info-value {
-  color: var(--text-primary);
-  font-size: 1.1rem;
-  text-align: right;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  font-weight: normal;  /* Добавлено - убирает жирность */
-}
-
-.verification-status {
-  background: rgba(128, 128, 128, 0.05);
-  border-radius: 8px;
-  padding: 8px 12px;
-  margin-top: 5px;
-}
-
-.status-icon {
-  font-size: 1.2rem;
-  margin-right: 4px;
-}
-
-.info-value.verified {
-  color: #4caf50;
-  font-weight: normal;  /* Убрана жирность */
-}
-
-.info-value.unverified {
-  color: #ff9800;
-  font-weight: normal;  /* Убрана жирность */
-}
-
-.verification-hint {
-  background: rgba(255, 152, 0, 0.1);
-  border-left: 4px solid #ff9800;
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin-top: 10px;
-  margin-bottom: 10px;
-}
-
-.verification-hint p {
-  color: var(--text-primary);
-  margin-bottom: 10px;
-  font-size: 0.95rem;
-}
 }
 </style>

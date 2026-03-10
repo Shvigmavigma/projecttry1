@@ -25,20 +25,31 @@
       >
         <h3 class="project-title">{{ project.title }}</h3>
         <p class="project-description">{{ project.body.slice(0, 120) }}...</p>
-        <p class="project-authors">
-          <span class="authors-label">Авторы:</span>
-          <span class="authors-list">
-            <span
-              v-for="(authorId, index) in project.authors_ids"
-              :key="authorId"
-              class="author-link"
-              @click.stop="goToUser(authorId)"
+        <div class="card-footer">
+          <span class="participants-label">Участники:</span>
+          <div class="participants-list">
+            <div
+              v-for="participant in project.participants"
+              :key="participant.user_id"
+              class="participant-item"
+              @click.stop="goToUser(participant.user_id)"
             >
-              {{ getAuthorNickname(authorId) }}
-              <span v-if="index < project.authors_ids.length - 1">, </span>
-            </span>
-          </span>
-        </p>
+              <div class="participant-avatar">
+                <img
+                  v-if="getUserAvatar(participant.user_id) && !avatarError[participant.user_id]"
+                  :src="getUserAvatar(participant.user_id)"
+                  :alt="getUserNickname(participant.user_id)"
+                  @error="avatarError[participant.user_id] = true"
+                />
+                <span v-else>{{ getUserInitials(participant.user_id) }}</span>
+                <span class="role-badge" :title="getRoleDisplay(participant.role)">
+                  {{ getRoleIcon(participant.role) }}
+                </span>
+              </div>
+              <span class="participant-name">{{ getUserNickname(participant.user_id) }}</span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -50,13 +61,17 @@ import { useProjectsStore } from '@/stores/projects';
 import { useUsersStore } from '@/stores/users';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Project } from '@/types';
+import type { Project, ProjectRole } from '@/types';
 
 const projectsStore = useProjectsStore();
 const usersStore = useUsersStore();
 const router = useRouter();
+
 const projects = ref<Project[]>([]);
 const loading = ref(true);
+const avatarError = ref<Record<number, boolean>>({});
+
+const baseUrl = 'http://localhost:8000';
 
 onMounted(async () => {
   if (usersStore.users.length === 0) {
@@ -66,8 +81,46 @@ onMounted(async () => {
   loading.value = false;
 });
 
+function getUserNickname(id: number): string {
+  const user = usersStore.users.find(u => u.id === id);
+  return user ? user.nickname : `ID: ${id}`;
+}
+
+function getUserAvatar(id: number): string | undefined {
+  if (avatarError.value[id]) return undefined;
+  const user = usersStore.users.find(u => u.id === id);
+  return user?.avatar ? `${baseUrl}/avatars/${user.avatar}` : undefined;
+}
+
+function getUserInitials(id: number): string {
+  const user = usersStore.users.find(u => u.id === id);
+  return user?.nickname?.charAt(0).toUpperCase() || '?';
+}
+
+function getRoleIcon(role: ProjectRole): string {
+  const icons: Record<ProjectRole, string> = {
+    customer: '📋',
+    supervisor: '🎓',
+    expert: '🔍',
+    executor: '👤',
+    curator: '👑',
+  };
+  return icons[role] || '';
+}
+
+function getRoleDisplay(role: ProjectRole): string {
+  const map: Record<ProjectRole, string> = {
+    customer: 'Заказчик',
+    supervisor: 'Научный руководитель',
+    expert: 'Эксперт',
+    executor: 'Исполнитель',
+    curator: 'Куратор',
+  };
+  return map[role];
+}
+
 const createProject = () => {
-  router.push('/project/new');
+  router.push('/project/edit/new');
 };
 
 const goToDetails = (id: number) => {
@@ -80,11 +133,6 @@ const goHome = () => {
 
 const goToUser = (userId: number) => {
   router.push(`/user/${userId}`);
-};
-
-const getAuthorNickname = (id: number): string => {
-  const user = usersStore.users.find(u => u.id === id);
-  return user ? user.nickname : `ID: ${id}`;
 };
 </script>
 
@@ -217,12 +265,11 @@ const getAuthorNickname = (id: number): string => {
   hyphens: auto;
 }
 
-.project-authors {
-  color: var(--text-secondary);
-  font-size: 0.9rem;
-  margin-bottom: 16px;
+.card-footer {
   border-top: 1px solid var(--border-color);
   padding-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -230,28 +277,96 @@ const getAuthorNickname = (id: number): string => {
   word-wrap: break-word;
 }
 
-.authors-label {
+.participants-label {
   font-weight: 500;
-  margin-right: 4px;
   color: var(--text-secondary);
+  margin-right: 4px;
+  flex-shrink: 0;
 }
 
-.authors-list {
-  display: inline;
+.participants-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
 }
 
-.author-link {
+.participant-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+  position: relative;
+}
+
+.participant-item:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.participant-avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: var(--button-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.participant-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.participant-avatar span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.role-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  font-size: 10px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
+}
+
+.participant-name {
   color: var(--link-color);
   text-decoration: underline;
+  font-size: 0.9rem;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  display: inline-block;
-  max-width: 100%;
+  max-width: 80px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.author-link:hover {
+.participant-item:hover .participant-name {
   color: var(--link-hover);
 }
 

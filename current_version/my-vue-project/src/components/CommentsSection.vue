@@ -2,11 +2,7 @@
   <div class="comments-section">
     <div class="comments-header">
       <h3>Комментарии</h3>
-      <button 
-        v-if="canComment" 
-        class="add-comment-button"
-        @click="showAddComment = true"
-      >
+      <button v-if="canComment" class="add-comment-button" @click="showAddComment = true">
         + Добавить комментарий
       </button>
     </div>
@@ -19,20 +15,18 @@
         rows="3"
       ></textarea>
       <div class="form-actions">
-        <button @click="saveComment" :disabled="!newComment.trim()" class="save-btn">
-          Отправить
-        </button>
+        <button @click="saveComment" :disabled="!newComment.trim()" class="save-btn">Отправить</button>
         <button @click="cancelAddComment" class="cancel-btn">Отмена</button>
       </div>
     </div>
 
     <!-- Список комментариев -->
-    <div v-if="comments.length > 0" class="comments-list">
+    <div v-if="sortedComments.length > 0" class="comments-list">
       <div
         v-for="comment in sortedComments"
         :key="comment.id"
         class="comment-item"
-        :class="{ 'unread': !comment.isRead && isAuthor }"
+        :class="{ 'unread': !comment.isRead && isAuthor, 'hidden': comment.hidden }"
       >
         <div class="comment-header">
           <div class="comment-author">
@@ -50,46 +44,49 @@
           <div class="comment-meta">
             <span class="comment-date">{{ formatDate(comment.createdAt) }}</span>
             <span v-if="!comment.isRead && isAuthor" class="unread-badge">Новый</span>
-            
-            <!-- Кнопка удаления комментария -->
-            <button 
-              v-if="canDeleteComment(comment)"
+
+            <!-- Кнопка скрытия для всех, у кого есть права (автор или заказчик) -->
+            <button
+              v-if="canHide(comment) && !comment.hidden"
               class="delete-comment-btn"
-              @click="confirmDeleteComment(comment)"
-              title="Удалить комментарий"
+              @click="confirmHideComment(comment)"
+              title="Скрыть комментарий"
             >
               <span class="delete-icon">🗑️</span>
             </button>
+
+            <!-- Дополнительная кнопка для куратора (на будущее) -->
+            <button
+              v-if="canHideComments && canHide(comment) && !comment.hidden"
+              class="hide-comment-btn"
+              @click="confirmHideComment(comment)"
+              title="Скрыть комментарий (особое действие)"
+            >
+              <span class="hide-icon">🙈</span>
+            </button>
           </div>
         </div>
-        <div class="comment-content">
+        <div class="comment-content" :class="{ 'hidden-content': comment.hidden }">
           {{ comment.content }}
         </div>
-        <div v-if="isAuthor && !comment.isRead" class="comment-actions">
-          <button @click="markAsRead(comment.id)" class="mark-read-btn">
-            Отметить как прочитанное
-          </button>
+        <!-- Кнопка "Отметить как прочитанное" – теперь доступна всем участникам (canComment) -->
+        <div v-if="!comment.isRead && canComment" class="comment-actions">
+          <button @click="markAsRead(comment.id)" class="mark-read-btn">Отметить как прочитанное</button>
         </div>
       </div>
     </div>
-    <div v-else class="no-comments">
-      Пока нет комментариев
-    </div>
+    <div v-else class="no-comments">Пока нет комментариев</div>
 
-    <!-- Модальное окно подтверждения удаления (на весь экран) -->
-    <div v-if="showDeleteModal" class="delete-modal-overlay" @click.self="closeDeleteModal">
-      <div class="delete-modal-content">
-        <div class="delete-modal-icon">🗑️</div>
-        <h3>Удаление комментария</h3>
-        <p>Вы уверены, что хотите удалить этот комментарий?</p>
-        <p class="comment-preview">"{{ commentToDelete?.content.substring(0, 50) }}{{ commentToDelete?.content.length > 50 ? '...' : '' }}"</p>
-        <div class="delete-modal-actions">
-          <button class="delete-modal-confirm" @click="deleteComment">
-            Да, удалить
-          </button>
-          <button class="delete-modal-cancel" @click="closeDeleteModal">
-            Отмена
-          </button>
+    <!-- Модальное окно подтверждения скрытия (обновлённое) -->
+    <div v-if="showHideModal" class="hide-modal-overlay" @click.self="closeHideModal">
+      <div class="hide-modal-content">
+        <div class="hide-modal-icon">🗑️</div>  <!-- изменено с 🙈 на 🗑️ -->
+        <h3>Скрыть комментарий</h3>
+        <p>Вы уверены, что хотите скрыть этот комментарий?</p>
+        <p class="comment-preview">"{{ commentToHide?.content.substring(0, 50) }}..."</p>
+        <div class="hide-modal-actions">
+          <button class="hide-modal-confirm" @click="hideComment">Да, скрыть</button>
+          <button class="hide-modal-cancel" @click="closeHideModal">Отмена</button>  <!-- улучшена кнопка отмена (см. стили) -->
         </div>
       </div>
     </div>
@@ -105,13 +102,12 @@ import { useAuthStore } from '@/stores/auth';
 const props = defineProps<{
   comments: Comment[];
   canComment: boolean;
-  isAuthor: boolean;
+  isAuthor: boolean; // true для заказчика
+  canHideComments?: boolean; // true для куратора (supervisor)
   onAddComment?: (content: string) => Promise<void>;
   onMarkAsRead?: (commentId: string) => Promise<void>;
-  onDeleteComment?: (commentId: string) => Promise<void>;
+  onHideComment?: (commentId: string) => Promise<void>;
 }>();
-
-const emit = defineEmits(['update:comments']);
 
 const usersStore = useUsersStore();
 const authStore = useAuthStore();
@@ -119,27 +115,45 @@ const authStore = useAuthStore();
 const showAddComment = ref(false);
 const newComment = ref('');
 const authorImageErrors = ref<Record<number, boolean>>({});
-const showDeleteModal = ref(false);
-const commentToDelete = ref<Comment | null>(null);
+const showHideModal = ref(false);
+const commentToHide = ref<Comment | null>(null);
 
 const baseUrl = 'http://localhost:8000';
 
-// Сортировка комментариев по дате (новые сверху)
-const sortedComments = computed(() => {
-  return [...props.comments].sort((a, b) => 
-    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-  );
+// Логируем полученные комментарии
+watch(() => props.comments, (newVal) => {
+  console.log('📥 CommentsSection received comments:', JSON.parse(JSON.stringify(newVal)));
+}, { deep: true, immediate: true });
+
+// Фильтруем скрытые комментарии: куратор видит все, остальные – только не скрытые
+const filteredComments = computed(() => {
+  const result = props.canHideComments
+    ? props.comments
+    : props.comments.filter(c => !c.hidden);
+  console.log('🔍 filteredComments computed:', JSON.parse(JSON.stringify(result)));
+  return result;
 });
 
-// Проверка, может ли пользователь удалить комментарий
-const canDeleteComment = (comment: Comment) => {
-  // Автор проекта может удалять любые комментарии
-  if (props.isAuthor) return true;
-  
-  // Автор комментария может удалить свой комментарий
-  if (authStore.user?.id === comment.authorId) return true;
-  
-  return false;
+// Сортировка по дате (новые сверху)
+const sortedComments = computed(() => {
+  const result = [...filteredComments.value].sort((a, b) =>
+    new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+  console.log('📊 sortedComments computed:', JSON.parse(JSON.stringify(result)));
+  return result;
+});
+
+// Проверка, может ли текущий пользователь скрыть данный комментарий
+const canHide = (comment: Comment): boolean => {
+  const result = props.isAuthor || authStore.user?.id === comment.authorId;
+  console.log('🛡️ canHide check', {
+    commentId: comment.id,
+    isAuthor: props.isAuthor,
+    userId: authStore.user?.id,
+    authorId: comment.authorId,
+    result
+  });
+  return result;
 };
 
 // Форматирование даты
@@ -150,13 +164,11 @@ const formatDate = (dateStr: string) => {
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
-
   if (diffMins < 1) return 'только что';
   if (diffMins < 60) return `${diffMins} мин назад`;
   if (diffHours < 24) return `${diffHours} ч назад`;
   if (diffDays === 1) return 'вчера';
   if (diffDays < 7) return `${diffDays} дн назад`;
-  
   return date.toLocaleDateString('ru-RU', {
     day: '2-digit',
     month: '2-digit',
@@ -190,7 +202,7 @@ const handleAuthorImageError = (id: number) => {
 // Добавление комментария
 const saveComment = async () => {
   if (!newComment.value.trim() || !props.onAddComment) return;
-  
+  console.log('💾 Saving comment:', newComment.value);
   await props.onAddComment(newComment.value);
   newComment.value = '';
   showAddComment.value = false;
@@ -204,40 +216,48 @@ const cancelAddComment = () => {
 // Отметка как прочитанное
 const markAsRead = async (commentId: string) => {
   if (props.onMarkAsRead) {
+    console.log('📖 Marking comment as read:', commentId);
     await props.onMarkAsRead(commentId);
   }
 };
 
-// Удаление комментария
-const confirmDeleteComment = (comment: Comment) => {
-  commentToDelete.value = comment;
-  showDeleteModal.value = true;
+// Скрытие комментария
+const confirmHideComment = (comment: Comment) => {
+  console.log('🔔 confirmHideComment called for comment:', comment.id);
+  commentToHide.value = comment;
+  showHideModal.value = true;
 };
 
-const closeDeleteModal = () => {
-  showDeleteModal.value = false;
-  commentToDelete.value = null;
+const closeHideModal = () => {
+  console.log('❌ Closing hide modal');
+  showHideModal.value = false;
+  commentToHide.value = null;
 };
 
-const deleteComment = async () => {
-  if (!commentToDelete.value || !props.onDeleteComment) return;
-  
-  await props.onDeleteComment(commentToDelete.value.id);
-  closeDeleteModal();
+const hideComment = async () => {
+  console.log('🚀 hideComment called with', commentToHide.value?.id);
+  if (!commentToHide.value || !props.onHideComment) {
+    console.log('⚠️ missing data or callback', { hasComment: !!commentToHide.value, hasCallback: !!props.onHideComment });
+    return;
+  }
+  try {
+    await props.onHideComment(commentToHide.value.id);
+    console.log('✅ hideComment completed successfully');
+  } catch (error) {
+    console.error('❌ hideComment error', error);
+    alert('Не удалось скрыть комментарий');
+  } finally {
+    closeHideModal();
+  }
 };
 
-// Прокрутка вниз
+// Автопрокрутка (опционально)
 const scrollToBottom = () => {
   const container = document.querySelector('.comments-list');
   if (container) {
     container.scrollTop = container.scrollHeight;
   }
 };
-
-// Следим за новыми комментариями для автопрокрутки
-watch(() => props.comments.length, () => {
-  scrollToBottom();
-});
 </script>
 
 <style scoped>
@@ -370,6 +390,11 @@ watch(() => props.comments.length, () => {
   background: rgba(66, 185, 131, 0.05);
 }
 
+.comment-item.hidden {
+  opacity: 0.5;
+  background: var(--bg-card);
+}
+
 .comment-header {
   display: flex;
   justify-content: space-between;
@@ -403,14 +428,6 @@ watch(() => props.comments.length, () => {
   object-fit: cover;
 }
 
-.author-avatar span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
 .author-name {
   color: var(--heading-color);
   font-weight: 600;
@@ -437,6 +454,7 @@ watch(() => props.comments.length, () => {
   font-weight: 600;
 }
 
+.hide-comment-btn,
 .delete-comment-btn {
   background: transparent;
   border: none;
@@ -444,30 +462,21 @@ watch(() => props.comments.length, () => {
   padding: 6px;
   border-radius: 50%;
   transition: all 0.2s;
+  opacity: 0.6;
   display: flex;
   align-items: center;
   justify-content: center;
-  opacity: 0.6;
 }
 
-.delete-icon {
-  font-size: 1.1rem;
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.1));
-}
-
-/* Стили для светлой темы */
-.light-theme .delete-icon {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
-}
-
+.hide-comment-btn:hover,
 .delete-comment-btn:hover {
   opacity: 1;
-  background: rgba(244, 67, 54, 0.1);
-  transform: scale(1.1);
+  background: rgba(128, 128, 128, 0.1);
 }
 
-.light-theme .delete-comment-btn:hover {
-  background: rgba(244, 67, 54, 0.15);
+.hide-icon,
+.delete-icon {
+  font-size: 1.1rem;
 }
 
 .comment-content {
@@ -477,6 +486,11 @@ watch(() => props.comments.length, () => {
   white-space: pre-wrap;
   word-wrap: break-word;
   padding-right: 30px;
+}
+
+.comment-content.hidden-content {
+  font-style: italic;
+  color: var(--text-secondary);
 }
 
 .comment-actions {
@@ -508,8 +522,8 @@ watch(() => props.comments.length, () => {
   font-style: italic;
 }
 
-/* Модальное окно на весь экран */
-.delete-modal-overlay {
+/* Модальное окно подтверждения скрытия (обновлённое) */
+.hide-modal-overlay {
   position: fixed;
   top: 0;
   left: 0;
@@ -524,7 +538,7 @@ watch(() => props.comments.length, () => {
   animation: fadeIn 0.2s ease;
 }
 
-.delete-modal-content {
+.hide-modal-content {
   background: var(--modal-bg);
   border-radius: 32px;
   padding: 40px;
@@ -538,20 +552,20 @@ watch(() => props.comments.length, () => {
   top: -5vh;
 }
 
-.delete-modal-icon {
+.hide-modal-icon {
   font-size: 4rem;
   margin-bottom: 20px;
-  animation: shake 0.5s ease;
+  /* анимация shake удалена */
 }
 
-.delete-modal-content h3 {
+.hide-modal-content h3 {
   color: var(--heading-color);
   margin-bottom: 15px;
   font-weight: 600;
   font-size: 1.8rem;
 }
 
-.delete-modal-content p {
+.hide-modal-content p {
   color: var(--text-primary);
   margin-bottom: 10px;
   font-size: 1.1rem;
@@ -570,14 +584,14 @@ watch(() => props.comments.length, () => {
   overflow-y: auto;
 }
 
-.delete-modal-actions {
+.hide-modal-actions {
   display: flex;
   gap: 15px;
   justify-content: center;
   margin-top: 30px;
 }
 
-.delete-modal-confirm, .delete-modal-cancel {
+.hide-modal-confirm {
   padding: 12px 30px;
   border: none;
   border-radius: 50px;
@@ -586,36 +600,38 @@ watch(() => props.comments.length, () => {
   cursor: pointer;
   transition: all 0.2s;
   min-width: 140px;
-}
-
-.delete-modal-confirm {
-  background: #d32f2f;
+  background: #ff9800;
   color: white;
-  box-shadow: 0 4px 10px rgba(211, 47, 47, 0.3);
+  box-shadow: 0 4px 10px rgba(255, 152, 0, 0.3);
 }
 
-.delete-modal-confirm:hover {
-  background: #b71c1c;
+.hide-modal-confirm:hover {
+  background: #f57c00;
   transform: translateY(-2px);
-  box-shadow: 0 6px 15px rgba(211, 47, 47, 0.4);
+  box-shadow: 0 6px 15px rgba(255, 152, 0, 0.4);
 }
 
-.light-theme .delete-modal-confirm {
-  box-shadow: 0 4px 10px rgba(211, 47, 47, 0.2);
+.hide-modal-cancel {
+  padding: 12px 30px;
+  border: none;
+  border-radius: 50px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  min-width: 140px;
+  background: linear-gradient(135deg, #6b7280, #4b5563);
+  color: white;
+  box-shadow: 0 4px 10px rgba(75, 85, 99, 0.3);
 }
 
-.delete-modal-cancel {
-  background: var(--bg-card);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-}
-
-.delete-modal-cancel:hover {
-  background: var(--bg-page);
+.hide-modal-cancel:hover {
+  background: linear-gradient(135deg, #4b5563, #374151);
   transform: translateY(-2px);
-  box-shadow: var(--shadow-strong);
+  box-shadow: 0 6px 15px rgba(55, 65, 81, 0.4);
 }
 
+/* Анимации (оставлены только fadeIn и slideUp) */
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -624,18 +640,5 @@ watch(() => props.comments.length, () => {
 @keyframes slideUp {
   from { transform: translateY(30px); opacity: 0; }
   to { transform: translateY(-5vh); opacity: 1; }
-}
-
-@keyframes shake {
-  0%, 100% { transform: translateX(0); }
-  10%, 30%, 50%, 70%, 90% { transform: translateX(-2px); }
-  20%, 40%, 60%, 80% { transform: translateX(2px); }
-}
-
-/* Убедимся, что комментарии не выходят за пределы */
-.comments-section,
-.comments-container {
-  max-width: 100%;
-  overflow-x: hidden;
 }
 </style>

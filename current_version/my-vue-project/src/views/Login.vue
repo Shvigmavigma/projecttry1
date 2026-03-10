@@ -1,8 +1,18 @@
+<!-- src/views/Login.vue -->
 <template>
   <div class="login-page">
+    <!-- Всплывающее уведомление об ошибке/успехе -->
+    <Transition name="fade">
+      <div v-if="notification.show" class="notification" :class="notification.type">
+        <span class="notification-message">{{ notification.message }}</span>
+        <button class="notification-close" @click="closeNotification">✕</button>
+      </div>
+    </Transition>
+
     <div class="theme-toggle-container">
       <ThemeToggle />
     </div>
+
     <div class="login-card">
       <h2>Вход в систему</h2>
       <form @submit.prevent="handleLogin">
@@ -14,6 +24,8 @@
             type="text"
             placeholder="Введите никнейм или почту"
             required
+            :class="{ 'error-input': hasError }"
+            @input="clearError"
           />
         </div>
 
@@ -25,9 +37,12 @@
             type="password"
             placeholder="Введите пароль"
             required
+            :class="{ 'error-input': hasError }"
+            @input="clearError"
           />
         </div>
 
+        <!-- Текстовое сообщение об ошибке (можно оставить для совместимости) -->
         <div v-if="errorMessage" class="error-message">
           {{ errorMessage }}
         </div>
@@ -45,7 +60,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted } from 'vue';
 import { useAuthStore } from '@/stores/auth';
 import { useRouter } from 'vue-router';
 import ThemeToggle from '@/components/ThemeToggle.vue';
@@ -57,59 +72,96 @@ const nickname = ref('');
 const password = ref('');
 const loading = ref(false);
 const errorMessage = ref('');
+const hasError = ref(false);
+
+// Уведомления
+const notification = ref({
+  show: false,
+  message: '',
+  type: 'error' as 'error' | 'info' | 'success'
+});
+
+let notificationTimeout: number | null = null;
+
+function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+  notification.value = { show: true, message, type };
+  hasError.value = type === 'error';
+  notificationTimeout = window.setTimeout(() => {
+    notification.value.show = false;
+    notificationTimeout = null;
+  }, duration);
+}
+
+function closeNotification() {
+  notification.value.show = false;
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+}
+
+function clearError() {
+  hasError.value = false;
+  errorMessage.value = '';
+}
+
+// При монтировании страницы логина очищаем старые токены (на всякий случай)
+onMounted(() => {
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  delete axios.defaults.headers.common['Authorization'];
+});
 
 const handleLogin = async () => {
   if (!nickname.value || !password.value) {
     errorMessage.value = 'Заполните все поля';
+    showNotification('Заполните все поля', 'info');
     return;
   }
 
   loading.value = true;
   errorMessage.value = '';
+  hasError.value = false;
 
   try {
-    // Отправляем запрос на новый эндпоинт /auth/login
-    const response = await axios.post('http://localhost:8000/auth/login', {
+    const response = await axios.post('/auth/login', {
       nickname: nickname.value,
       password: password.value
     });
 
-    // Сохраняем токены
     const { access_token, refresh_token } = response.data;
-    
+
     localStorage.setItem('access_token', access_token);
     localStorage.setItem('refresh_token', refresh_token);
-    
-    // Настраиваем axios для автоматической отправки токена
+
     axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
-    
-    // Получаем данные пользователя
-    const userResponse = await axios.get('http://localhost:8000/users/me');
+
+    const userResponse = await axios.get('/users/me');
     authStore.user = userResponse.data;
-    
-    // Перенаправляем на главную
-    router.push('/main');
-    
+
+    showNotification('Вход выполнен успешно!', 'success');
+    setTimeout(() => router.push('/main'), 1000);
+
   } catch (error: any) {
     console.error('Login error:', error);
-    
-    if (error.code === 'ERR_NETWORK') {
-      errorMessage.value = 'Ошибка сети. Проверьте подключение к серверу.';
-    } else if (error.response) {
-      // Обработка разных статусов ошибок
-      switch (error.response.status) {
-        case 401:
-          errorMessage.value = 'Неверный логин или пароль';
-          break;
-        case 403:
-          errorMessage.value = 'Email не подтвержден. Проверьте почту.';
-          break;
-        default:
-          errorMessage.value = error.response.data?.detail || 'Ошибка при входе';
-      }
+    hasError.value = true;
+
+    let userMessage = 'Ошибка при входе';
+    if (error.response) {
+      // Используем сообщение от сервера (если оно есть)
+      userMessage = error.response.data?.detail || `Ошибка ${error.response.status}`;
+    } else if (error.code === 'ERR_NETWORK') {
+      userMessage = 'Ошибка сети. Проверьте подключение к серверу.';
     } else {
-      errorMessage.value = error.message || 'Произошла ошибка';
+      userMessage = error.message || 'Произошла неизвестная ошибка';
     }
+
+    errorMessage.value = userMessage;
+    showNotification(userMessage, 'error');
   } finally {
     loading.value = false;
   }
@@ -192,6 +244,11 @@ input:focus {
   box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
 }
 
+input.error-input {
+  border-color: var(--danger-color);
+  background-color: rgba(244, 67, 54, 0.05);
+}
+
 .error-message {
   background: var(--error-bg);
   color: var(--danger-color);
@@ -246,5 +303,69 @@ input:focus {
 .register-link a:hover {
   color: var(--link-hover);
   text-decoration: underline;
+}
+
+/* Уведомления */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  box-shadow: var(--shadow-strong);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 400px;
+  backdrop-filter: blur(4px);
+}
+
+.notification.error {
+  background-color: rgba(244, 67, 54, 0.9);
+  border-left: 4px solid #d32f2f;
+}
+
+.notification.success {
+  background-color: rgba(76, 175, 80, 0.9);
+  border-left: 4px solid #388e3c;
+}
+
+.notification.info {
+  background-color: rgba(33, 150, 243, 0.9);
+  border-left: 4px solid #1976d2;
+}
+
+.notification-message {
+  flex: 1;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

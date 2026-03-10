@@ -25,6 +25,9 @@
       <p class="user-email">{{ user.email }}</p>
       <p class="user-class">Класс: {{ user.class }}</p>
       <p v-if="user.speciality" class="user-speciality">Специальность: {{ user.speciality }}</p>
+      <div v-if="user.is_teacher && user.teacher_info" class="user-roles">
+        Роли: {{ formatTeacherRoles(user.teacher_info) }}
+      </div>
     </div>
 
     <div class="projects-section">
@@ -41,25 +44,27 @@
           <h3 class="card-title">{{ project.title }}</h3>
           <p class="card-description">{{ project.body.slice(0, 100) }}...</p>
           <div class="card-footer">
-            <span class="authors-label">Авторы:</span>
-            <div class="authors-list">
+            <span class="participants-label">Участники:</span>
+            <div class="participants-list">
               <div
-                v-for="(authorId, index) in project.authors_ids"
-                :key="authorId"
-                class="author-item"
-                @click.stop="goToUser(authorId)"
+                v-for="participant in project.participants"
+                :key="participant.user_id"
+                class="participant-item"
+                @click.stop="goToUser(participant.user_id)"
               >
-                <div class="author-avatar">
+                <div class="participant-avatar">
                   <img
-                    v-if="getAuthorAvatar(authorId) && !authorImageError[authorId]"
-                    :src="getAuthorAvatar(authorId)"
-                    :alt="getAuthorNickname(authorId)"
-                    @error="authorImageError[authorId] = true"
+                    v-if="getUserAvatar(participant.user_id) && !avatarErrorMap[participant.user_id]"
+                    :src="getUserAvatar(participant.user_id)"
+                    :alt="getUserNickname(participant.user_id)"
+                    @error="avatarErrorMap[participant.user_id] = true"
                   />
-                  <span v-else>{{ getAuthorInitials(authorId) }}</span>
+                  <span v-else>{{ getUserInitials(participant.user_id) }}</span>
+                  <span class="role-badge" :title="getRoleDisplay(participant.role)">
+                    {{ getRoleIcon(participant.role) }}
+                  </span>
                 </div>
-                <span class="author-name">{{ getAuthorNickname(authorId) }}</span>
-                <span v-if="index < project.authors_ids.length - 1" class="separator">,</span>
+                <span class="participant-name">{{ getUserNickname(participant.user_id) }}</span>
               </div>
             </div>
           </div>
@@ -82,7 +87,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import AvatarModal from '@/components/AvatarModal.vue';
-import type { User, Project } from '@/types';
+import type { User, Project, TeacherInfo, ProjectRole } from '@/types';
+import axios from 'axios';
 
 const route = useRoute();
 const router = useRouter();
@@ -95,7 +101,7 @@ const loadingProjects = ref(true);
 const errorUser = ref('');
 const avatarError = ref(false);
 const showAvatarModal = ref(false);
-const authorImageError = ref<Record<number, boolean>>({});
+const avatarErrorMap = ref<Record<number, boolean>>({});
 
 const baseUrl = 'http://localhost:8000';
 
@@ -116,38 +122,35 @@ const loadUserData = async (id: number) => {
   loadingProjects.value = true;
   errorUser.value = '';
   avatarError.value = false;
-  authorImageError.value = {};
+  avatarErrorMap.value = {};
 
-  // Загружаем всех пользователей один раз (если ещё не загружены)
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
 
-  // Ищем текущего пользователя в уже загруженном списке
   const foundUser = usersStore.users.find(u => u.id === id);
   if (foundUser) {
     user.value = foundUser;
-  } else {
-    // Если пользователя нет в списке (возможно, он новый), пытаемся загрузить через поиск,
-    // но при этом не перезаписываем весь список, а добавляем найденного.
-    // Для этого можно использовать специальный метод, если он есть, или просто показать ошибку.
-    // Как вариант — сделать запрос к эндпоинту /users/{id}, если он существует.
-    // Для простоты покажем ошибку.
-    errorUser.value = 'Пользователь не найден';
     loadingUser.value = false;
-    loadingProjects.value = false;
-    return;
-  }
-  loadingUser.value = false;
-
-  // Загружаем проекты пользователя
-  try {
-    const response = await fetch(`${baseUrl}/projects/?author_id=${id}`);
-    if (response.ok) {
-      projects.value = await response.json();
-    } else {
-      console.error('Ошибка загрузки проектов');
+  } else {
+    try {
+      // Пытаемся получить пользователя через API
+      const response = await axios.get(`/users/${id}`);
+      user.value = response.data;
+      // Добавляем в стор, если хотим
+      usersStore.users.push(response.data);
+      loadingUser.value = false;
+    } catch (err) {
+      errorUser.value = 'Пользователь не найден';
+      loadingUser.value = false;
+      loadingProjects.value = false;
+      return;
     }
+  }
+
+  try {
+    const response = await axios.get(`/projects/?participant_id=${id}`);
+    projects.value = response.data;
   } catch (err) {
     console.error('Ошибка загрузки проектов:', err);
   } finally {
@@ -175,20 +178,51 @@ watch(() => route.params.id, async (newId) => {
   }
 });
 
-const getAuthorNickname = (id: number): string => {
+function getUserNickname(id: number): string {
   const u = usersStore.users.find(u => u.id === id);
   return u ? u.nickname : `ID: ${id}`;
-};
+}
 
-const getAuthorAvatar = (id: number): string | undefined => {
+function getUserAvatar(id: number): string | undefined {
   const u = usersStore.users.find(u => u.id === id);
   return u?.avatar ? `${baseUrl}/avatars/${u.avatar}` : undefined;
-};
+}
 
-const getAuthorInitials = (id: number): string => {
+function getUserInitials(id: number): string {
   const u = usersStore.users.find(u => u.id === id);
   return u?.nickname?.charAt(0).toUpperCase() || '?';
-};
+}
+
+function getRoleIcon(role: ProjectRole): string {
+  const icons: Record<ProjectRole, string> = {
+    customer: '📋',
+    supervisor: '🎓',
+    expert: '🔍',
+    executor: '👤',
+    curator: '👑',
+  };
+  return icons[role] || '';
+}
+
+function getRoleDisplay(role: ProjectRole): string {
+  const map: Record<ProjectRole, string> = {
+    customer: 'Заказчик',
+    supervisor: 'Научный руководитель',
+    expert: 'Эксперт',
+    executor: 'Исполнитель',
+    curator: 'Куратор',
+  };
+  return map[role];
+}
+
+function formatTeacherRoles(info: TeacherInfo): string {
+  const roles: string[] = [];
+  if (info.roles.includes('supervisor')) roles.push('Научный руководитель');
+  if (info.roles.includes('expert')) roles.push('Эксперт');
+  if (info.roles.includes('customer')) roles.push('Заказчик');
+  if (info.curator) roles.push('Куратор');
+  return roles.join(', ') || 'Роли не назначены';
+}
 
 const goToProject = (projectId: number) => {
   router.push(`/project/${projectId}`);
@@ -203,7 +237,6 @@ const goHome = () => {
 };
 </script>
 
-
 <style scoped>
 .user-details-page {
   min-height: 100vh;
@@ -212,7 +245,6 @@ const goHome = () => {
   box-sizing: border-box;
   transition: background 0.3s;
 }
-
 .details-header {
   display: flex;
   justify-content: space-between;
@@ -220,22 +252,16 @@ const goHome = () => {
   max-width: 1200px;
   margin: 0 auto 20px;
 }
-
 .details-header h1 {
   color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
   overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .header-actions {
   display: flex;
   gap: 10px;
-  align-items: center;
 }
-
 .home-button {
   background: none;
   border: none;
@@ -251,15 +277,9 @@ const goHome = () => {
   transition: background 0.2s;
   color: var(--text-primary);
 }
-
 .home-button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-
-.light-theme .home-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
 .user-info-card {
   background: var(--bg-card);
   border-radius: 24px;
@@ -268,10 +288,8 @@ const goHome = () => {
   max-width: 600px;
   margin: 0 auto 40px;
   text-align: center;
-  overflow: hidden;
   transition: background 0.3s;
 }
-
 .user-avatar {
   width: 80px;
   height: 80px;
@@ -287,88 +305,53 @@ const goHome = () => {
   overflow: hidden;
   transition: opacity 0.2s;
 }
-
 .user-avatar.clickable {
   cursor: pointer;
 }
-
 .user-avatar.clickable:hover {
   opacity: 0.8;
 }
-
 .user-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
-
-.user-avatar span {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
 .user-nickname {
   color: var(--heading-color);
   margin-bottom: 8px;
   font-size: 1.8rem;
   overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
-  max-width: 100%;
 }
-
 .user-fullname {
   color: var(--text-primary);
   font-size: 1.2rem;
   margin-bottom: 8px;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .user-email {
   color: var(--text-secondary);
   font-size: 1rem;
   margin-bottom: 8px;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
-.user-class, .user-speciality {
+.user-class, .user-speciality, .user-roles {
   color: var(--text-secondary);
   font-size: 1rem;
   margin-top: 4px;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .projects-section {
   max-width: 1000px;
   margin: 0 auto;
 }
-
 .projects-section h2 {
   color: var(--heading-color);
   font-size: 1.8rem;
   margin-bottom: 24px;
   text-align: center;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .projects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 20px;
 }
-
 .project-card {
   background: var(--bg-card);
   border-radius: 16px;
@@ -380,33 +363,25 @@ const goHome = () => {
   display: flex;
   flex-direction: column;
 }
-
 .project-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-strong);
   border-color: var(--accent-color);
 }
-
 .card-title {
   color: var(--heading-color);
   margin-bottom: 10px;
   font-size: 1.2rem;
   overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .card-description {
   color: var(--text-primary);
   line-height: 1.5;
   margin-bottom: 12px;
   font-size: 0.95rem;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
   flex: 1;
+  overflow-wrap: break-word;
 }
-
 .card-footer {
   border-top: 1px solid var(--border-color);
   padding-top: 8px;
@@ -415,25 +390,19 @@ const goHome = () => {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
 }
-
-.authors-label {
+.participants-label {
   font-weight: 500;
   margin-right: 4px;
-  flex-shrink: 0;
   color: var(--text-secondary);
 }
-
-.authors-list {
+.participants-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 2px;
+  gap: 8px;
 }
-
-.author-item {
+.participant-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -441,15 +410,15 @@ const goHome = () => {
   padding: 2px 4px;
   border-radius: 4px;
   transition: background-color 0.2s;
+  position: relative;
 }
-
-.author-item:hover {
+.participant-item:hover {
   background: rgba(128, 128, 128, 0.1);
 }
-
-.author-avatar {
-  width: 20px;
-  height: 20px;
+.participant-avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent-color);
   color: var(--button-text);
@@ -461,44 +430,38 @@ const goHome = () => {
   overflow: hidden;
   flex-shrink: 0;
 }
-
-.author-avatar img {
+.participant-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
-
-.author-avatar span {
+.role-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  font-size: 10px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
 }
-
-.author-name {
+.participant-name {
   color: var(--link-color);
   text-decoration: underline;
   font-size: 0.9rem;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
-  max-width: 100px;
+  max-width: 80px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.author-item:hover .author-name {
+.participant-item:hover .participant-name {
   color: var(--link-hover);
 }
-
-.separator {
-  color: var(--text-secondary);
-  margin-left: 2px;
-}
-
 .loading, .error, .no-projects {
   text-align: center;
   color: var(--text-primary);

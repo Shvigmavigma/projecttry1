@@ -28,25 +28,27 @@
         <h3 class="card-title">{{ project.title }}</h3>
         <p class="card-description">{{ project.body.slice(0, 150) }}...</p>
         <div class="card-footer">
-          <span class="authors-label">Авторы:</span>
-          <div class="authors-list">
+          <span class="participants-label">Участники:</span>
+          <div class="participants-list">
             <div
-              v-for="(authorId, index) in project.authors_ids"
-              :key="authorId"
-              class="author-item"
-              @click.stop="goToUser(authorId)"
+              v-for="participant in project.participants"
+              :key="participant.user_id"
+              class="participant-item"
+              @click.stop="goToUser(participant.user_id)"
             >
-              <div class="author-avatar">
+              <div class="participant-avatar">
                 <img
-                  v-if="getAuthorAvatar(authorId) && !authorImageError[authorId]"
-                  :src="getAuthorAvatar(authorId)"
-                  :alt="getAuthorNickname(authorId)"
-                  @error="authorImageError[authorId] = true"
+                  v-if="getUserAvatar(participant.user_id) && !avatarError[participant.user_id]"
+                  :src="getUserAvatar(participant.user_id)"
+                  :alt="getUserNickname(participant.user_id)"
+                  @error="avatarError[participant.user_id] = true"
                 />
-                <span v-else>{{ getAuthorInitials(authorId) }}</span>
+                <span v-else>{{ getUserInitials(participant.user_id) }}</span>
+                <span class="role-badge" :title="getRoleDisplay(participant.role)">
+                  {{ getRoleIcon(participant.role) }}
+                </span>
               </div>
-              <span class="author-name">{{ getAuthorNickname(authorId) }}</span>
-              <span v-if="index < project.authors_ids.length - 1" class="separator">,</span>
+              <span class="participant-name">{{ getUserNickname(participant.user_id) }}</span>
             </div>
           </div>
         </div>
@@ -61,16 +63,15 @@ import { useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import axios from 'axios';
-import type { Project } from '@/types';
+import type { Project, ProjectRole } from '@/types';
 
 const router = useRouter();
 const usersStore = useUsersStore();
 const projects = ref<Project[]>([]);
 const search = ref('');
 const loading = ref(true);
-const authorImageError = ref<Record<number, boolean>>({});
+const avatarError = ref<Record<number, boolean>>({});
 
-// Базовый URL бэкенда (при необходимости замените на переменную окружения)
 const baseUrl = 'http://localhost:8000';
 
 onMounted(async () => {
@@ -85,7 +86,7 @@ async function fetchAll() {
   try {
     const res = await axios.get<Project[]>(`${baseUrl}/projects/`);
     projects.value = res.data;
-    authorImageError.value = {};
+    avatarError.value = {};
   } catch (error) {
     console.error('Error fetching projects:', error);
   } finally {
@@ -104,7 +105,7 @@ async function searchProjects() {
       params: { q: search.value }
     });
     projects.value = res.data;
-    authorImageError.value = {};
+    avatarError.value = {};
   } catch (error) {
     console.error('Error searching projects:', error);
   } finally {
@@ -112,19 +113,41 @@ async function searchProjects() {
   }
 }
 
-function getAuthorNickname(id: number): string {
+function getUserNickname(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
   return user ? user.nickname : `ID: ${id}`;
 }
 
-function getAuthorAvatar(id: number): string | undefined {
+function getUserAvatar(id: number): string | undefined {
   const user = usersStore.users.find(u => u.id === id);
   return user?.avatar ? `${baseUrl}/avatars/${user.avatar}` : undefined;
 }
 
-function getAuthorInitials(id: number): string {
+function getUserInitials(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
   return user?.nickname?.charAt(0).toUpperCase() || '?';
+}
+
+function getRoleIcon(role: ProjectRole): string {
+  const icons: Record<ProjectRole, string> = {
+    customer: '📋',
+    supervisor: '🎓',
+    expert: '🔍',
+    executor: '👤',
+    curator: '👑',
+  };
+  return icons[role] || '';
+}
+
+function getRoleDisplay(role: ProjectRole): string {
+  const map: Record<ProjectRole, string> = {
+    customer: 'Заказчик',
+    supervisor: 'Научный руководитель',
+    expert: 'Эксперт',
+    executor: 'Исполнитель',
+    curator: 'Куратор',
+  };
+  return map[role];
 }
 
 function goToProject(id: number) {
@@ -148,7 +171,6 @@ function goHome() {
   box-sizing: border-box;
   transition: background 0.3s;
 }
-
 .projects-header {
   display: flex;
   justify-content: space-between;
@@ -156,18 +178,15 @@ function goHome() {
   max-width: 1200px;
   margin: 0 auto 20px;
 }
-
 .projects-header h1 {
   color: var(--heading-color);
   font-size: 2.5rem;
   margin: 0;
 }
-
 .header-actions {
   display: flex;
   gap: 10px;
 }
-
 .home-button {
   background: none;
   border: none;
@@ -183,24 +202,13 @@ function goHome() {
   transition: background 0.2s;
   color: var(--text-primary);
 }
-
 .home-button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-
-.dark-theme .home-button:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.light-theme .home-button:hover {
-  background: rgba(0, 0, 0, 0.05);
-}
-
 .search-container {
   max-width: 600px;
   margin: 0 auto 30px;
 }
-
 .search-container input {
   width: 100%;
   padding: 12px 20px;
@@ -212,20 +220,10 @@ function goHome() {
   background: var(--input-bg);
   color: var(--text-primary);
 }
-
-.search-container input::placeholder {
-  color: var(--text-secondary);
-}
-
 .search-container input:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
-
-.dark-theme .search-container input:focus {
-  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
-}
-
 .projects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -233,7 +231,6 @@ function goHome() {
   max-width: 1200px;
   margin: 0 auto;
 }
-
 .project-card {
   background: var(--bg-card);
   border-radius: 16px;
@@ -245,13 +242,11 @@ function goHome() {
   flex-direction: column;
   border: 1px solid var(--border-color);
 }
-
 .project-card:hover {
   transform: translateY(-4px);
   box-shadow: var(--shadow-strong);
   border-color: var(--accent-color);
 }
-
 .card-title {
   color: var(--heading-color);
   margin-bottom: 12px;
@@ -260,19 +255,14 @@ function goHome() {
   padding-bottom: 8px;
   overflow-wrap: break-word;
   word-wrap: break-word;
-  hyphens: auto;
 }
-
 .card-description {
   color: var(--text-primary);
   line-height: 1.5;
   flex: 1;
   margin-bottom: 16px;
   overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
 }
-
 .card-footer {
   border-top: 1px solid var(--border-color);
   padding-top: 12px;
@@ -281,25 +271,20 @@ function goHome() {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
 }
-
-.authors-label {
+.participants-label {
   font-weight: 500;
   color: var(--text-secondary);
   margin-right: 4px;
   flex-shrink: 0;
 }
-
-.authors-list {
+.participants-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 2px;
+  gap: 8px;
 }
-
-.author-item {
+.participant-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -307,15 +292,15 @@ function goHome() {
   padding: 2px 4px;
   border-radius: 4px;
   transition: background-color 0.2s;
+  position: relative;
 }
-
-.author-item:hover {
+.participant-item:hover {
   background: rgba(128, 128, 128, 0.1);
 }
-
-.author-avatar {
-  width: 20px;
-  height: 20px;
+.participant-avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent-color);
   color: var(--button-text);
@@ -327,44 +312,38 @@ function goHome() {
   overflow: hidden;
   flex-shrink: 0;
 }
-
-.author-avatar img {
+.participant-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
-
-.author-avatar span {
+.role-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  font-size: 10px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 100%;
-  height: 100%;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
 }
-
-.author-name {
+.participant-name {
   color: var(--link-color);
   text-decoration: underline;
   font-size: 0.9rem;
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
-  max-width: 100px;
+  max-width: 80px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-
-.author-item:hover .author-name {
+.participant-item:hover .participant-name {
   color: var(--link-hover);
 }
-
-.separator {
-  color: var(--text-secondary);
-  margin-left: 2px;
-}
-
 .loading, .no-projects {
   text-align: center;
   color: var(--text-primary);

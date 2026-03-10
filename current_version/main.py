@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 
 load_dotenv()
-
+from sqlalchemy.orm.attributes import flag_modified
 from models import Base, User, Project
 from database import engine, session_local
 from schemas import (
@@ -29,12 +29,15 @@ from schemas import (
     # Common schemas
     UserResponse, LoginRequest,
     # Project schemas
-    ProjectResponse, ProjectCreate, ProjectUpdate, Comment,
+    ProjectRole, Participant, ProjectCreate, ProjectResponse, ProjectUpdate, Comment,
     # Email schemas
     EmailVerificationCodeRequest, EmailVerificationRequest,
     PasswordResetRequest, PasswordResetConfirm,
     # Token schemas
-    TokenResponse
+    TokenResponse,
+    # New schemas for suggestions and invitations
+    Suggestion, SuggestionCreate, SuggestionStatus,
+    InvitationCreate, InvitationInfo
 )
 
 from willow import Image
@@ -67,8 +70,8 @@ origins = [
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "http://localhost:5174",   
-    "http://127.0.0.1:5174",     
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
     "http://localhost:8000",
     "http://127.0.0.1:8000",
 ]
@@ -86,7 +89,7 @@ app.add_middleware(
 # Создаем директории
 os.makedirs("avatars", exist_ok=True)
 app.mount("/avatars", StaticFiles(directory="avatars"), name="avatars")
-AVATAR_DIR = "avatars" 
+AVATAR_DIR = "avatars"
 
 # Создаем таблицы
 Base.metadata.create_all(bind=engine)
@@ -97,6 +100,18 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ДЛЯ ПРОЕКТОВ ====================
+def is_project_participant(project: Project, user_id: int) -> bool:
+    """Проверяет, является ли пользователь участником проекта"""
+    return any(p.get("user_id") == user_id for p in (project.participants or []))
+
+def get_participant_role(project: Project, user_id: int) -> Optional[str]:
+    """Возвращает роль пользователя в проекте или None"""
+    for p in (project.participants or []):
+        if p.get("user_id") == user_id:
+            return p.get("role")
+    return None
 
 # ==================== TEACHER EMAIL VERIFICATION ====================
 
@@ -123,7 +138,7 @@ def load_accepted_emails():
         with open(ACCEPTED_EMAILS_FILE, 'w', encoding='utf-8') as f:
             json.dump(example_emails, f, ensure_ascii=False, indent=2)
         return example_emails
-    
+
     try:
         with open(ACCEPTED_EMAILS_FILE, 'r', encoding='utf-8') as f:
             return json.load(f)
@@ -137,16 +152,16 @@ def is_email_accepted(email: str) -> bool:
     """
     data = load_accepted_emails()
     email_lower = email.lower()
-    
+
     # Проверка по конкретным email
     if email_lower in [e.lower() for e in data.get("accepted_emails", [])]:
         return True
-    
+
     # Проверка по доменам
     domain = email_lower.split('@')[-1]
     if domain in [d.lower() for d in data.get("domains", [])]:
         return True
-    
+
     return False
 
 # ==================== STUDENTS ====================
@@ -160,20 +175,20 @@ async def create_student(student: StudentCreate, db: Session = Depends(get_db)):
     existing_nickname = db.query(User).filter(User.nickname == student.nickname.strip()).first()
     if existing_nickname:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Пользователь с таким никнеймом уже существует"
         )
-    
+
     existing_email = db.query(User).filter(User.email == student.email.strip()).first()
     if existing_email:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Пользователь с таким email уже существует"
         )
-    
+
     # Хешируем пароль
     hashed_password = get_password_hash(student.password.strip())
-    
+
     db_user = User(
         nickname=student.nickname.strip(),
         fullname=student.fullname,
@@ -201,7 +216,7 @@ async def get_students(
     Получить список всех учеников с возможностью поиска
     """
     query = db.query(User).filter(User.is_teacher == False)
-    
+
     if q:
         query = query.filter(
             or_(
@@ -210,7 +225,7 @@ async def get_students(
                 User.email.ilike(f"%{q}%")
             )
         )
-    
+
     students = query.all()
     return students
 
@@ -226,8 +241,8 @@ async def get_student(student_id: int, db: Session = Depends(get_db)):
 
 @app.put("/students/{student_id}", response_model=StudentResponse, summary="Обновить ученика", tags=["Students"])
 async def update_student(
-    student_id: int, 
-    student_update: StudentUpdate, 
+    student_id: int,
+    student_update: StudentUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -271,15 +286,15 @@ async def delete_student(student_id: int, db: Session = Depends(get_db)):
                 os.remove(filepath)
             except OSError as e:
                 print(f"Ошибка при удалении файла {filepath}: {e}")
-    
-    # Удаляем из проектов
+
+    # Удаляем пользователя из участников проектов
     all_projects = db.query(Project).all()
     for project in all_projects:
-        if student_id in (project.authors_ids or []):
-            authors = list(project.authors_ids)
-            authors.remove(student_id)
-            project.authors_ids = authors
-    
+        if project.participants:
+            new_participants = [p for p in project.participants if p.get("user_id") != student_id]
+            if len(new_participants) != len(project.participants):
+                project.participants = new_participants
+
     db.delete(student)
     db.commit()
     return {"message": f"Student {student_id} deleted successfully"}
@@ -294,12 +309,12 @@ async def check_teacher_email(request: dict):
     email = request.get("email")
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
-    
+
     if is_email_accepted(email):
         return {"accepted": True, "message": "Email разрешен для регистрации учителя"}
     else:
         raise HTTPException(
-            status_code=403, 
+            status_code=403,
             detail="Этот email не разрешен для регистрации учителя. Используйте email из списка разрешенных."
         )
 
@@ -314,28 +329,28 @@ async def create_teacher(teacher: TeacherCreate, db: Session = Depends(get_db)):
             status_code=403,
             detail="Этот email не разрешен для регистрации учителя. Используйте email из списка разрешенных."
         )
-    
+
     # Проверка уникальности
     existing_nickname = db.query(User).filter(User.nickname == teacher.nickname.strip()).first()
     if existing_nickname:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Пользователь с таким никнеймом уже существует"
         )
-    
+
     existing_email = db.query(User).filter(User.email == teacher.email.strip()).first()
     if existing_email:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Пользователь с таким email уже существует"
         )
-    
+
     # Хешируем пароль
     hashed_password = get_password_hash(teacher.password.strip())
-    
+
     # Преобразуем TeacherInfo в словарь
-    teacher_info_dict = teacher.teacher_info.dict() if teacher.teacher_info else {}
-    
+    teacher_info_dict = teacher.teacher_info.model_dump() if teacher.teacher_info else {}
+
     db_user = User(
         nickname=teacher.nickname.strip(),
         fullname=teacher.fullname,
@@ -352,12 +367,12 @@ async def create_teacher(teacher: TeacherCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+
     # Отправляем код подтверждения на email
     code = generate_verification_code()
     redis_client.setex(f"verify:{teacher.email}", 600, code)
     await send_verification_email(teacher.email, code)
-    
+
     return db_user
 
 @app.post("/teachers/verify-and-create", response_model=TeacherResponse, tags=["Teachers"])
@@ -372,37 +387,37 @@ async def verify_and_create_teacher(
     email = request.get("email")
     code = request.get("code")
     teacher_data = request.get("teacher_data")
-    
+
     if not email or not code or not teacher_data:
         raise HTTPException(status_code=400, detail="Email, code and teacher data required")
-    
+
     # Проверяем код
     stored_code = redis_client.get(f"verify:{email}")
     if not stored_code or stored_code != code:
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-    
+
     # Удаляем использованный код
     redis_client.delete(f"verify:{email}")
-    
+
     # Проверяем, разрешен ли email
     if not is_email_accepted(email):
         raise HTTPException(
             status_code=403,
             detail="Этот email не разрешен для регистрации учителя"
         )
-    
+
     # Проверяем, не зарегистрирован ли уже пользователь
     existing_user = db.query(User).filter(
-        (User.nickname == teacher_data.get('nickname')) | 
+        (User.nickname == teacher_data.get('nickname')) |
         (User.email == email)
     ).first()
-    
+
     if existing_user:
         raise HTTPException(status_code=400, detail="Nickname or email already registered")
-    
+
     # Хешируем пароль
     hashed_password = get_password_hash(teacher_data.get('password'))
-    
+
     # Создаем учителя
     db_user = User(
         nickname=teacher_data.get('nickname').strip(),
@@ -417,7 +432,7 @@ async def verify_and_create_teacher(
         is_teacher=True,
         teacher_info=teacher_data.get('teacher_info', {})
     )
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -432,7 +447,7 @@ async def get_teachers(
     Получить список всех учителей с возможностью поиска
     """
     query = db.query(User).filter(User.is_teacher == True)
-    
+
     if q:
         # Поиск по текстовым полям
         text_condition = or_(
@@ -442,7 +457,7 @@ async def get_teachers(
             User.speciality.ilike(f"%{q}%")
         )
         query = query.filter(text_condition)
-    
+
     teachers = query.all()
     return teachers
 
@@ -458,8 +473,8 @@ async def get_teacher(teacher_id: int, db: Session = Depends(get_db)):
 
 @app.put("/teachers/{teacher_id}", response_model=TeacherResponse, summary="Обновить учителя", tags=["Teachers"])
 async def update_teacher(
-    teacher_id: int, 
-    teacher_update: TeacherUpdate, 
+    teacher_id: int,
+    teacher_update: TeacherUpdate,
     db: Session = Depends(get_db)
 ):
     """
@@ -480,7 +495,7 @@ async def update_teacher(
     if teacher_update.speciality is not None:
         teacher.speciality = teacher_update.speciality
     if teacher_update.teacher_info is not None:
-        teacher.teacher_info = teacher_update.teacher_info.dict()
+        teacher.teacher_info = teacher_update.teacher_info.model_dump()
 
     db.commit()
     db.refresh(teacher)
@@ -503,15 +518,15 @@ async def delete_teacher(teacher_id: int, db: Session = Depends(get_db)):
                 os.remove(filepath)
             except OSError as e:
                 print(f"Ошибка при удалении файла {filepath}: {e}")
-    
-    # Удаляем из проектов
+
+    # Удаляем пользователя из участников проектов
     all_projects = db.query(Project).all()
     for project in all_projects:
-        if teacher_id in (project.authors_ids or []):
-            authors = list(project.authors_ids)
-            authors.remove(teacher_id)
-            project.authors_ids = authors
-    
+        if project.participants:
+            new_participants = [p for p in project.participants if p.get("user_id") != teacher_id]
+            if len(new_participants) != len(project.participants):
+                project.participants = new_participants
+
     db.delete(teacher)
     db.commit()
     return {"message": f"Teacher {teacher_id} deleted successfully"}
@@ -547,12 +562,12 @@ async def search_all_users(
     Поиск по всем пользователям с возможностью фильтрации по типу
     """
     query = db.query(User)
-    
+
     if user_type == "student":
         query = query.filter(User.is_teacher == False)
     elif user_type == "teacher":
         query = query.filter(User.is_teacher == True)
-    
+
     if q:
         try:
             user_id = int(q)
@@ -586,7 +601,7 @@ async def upload_avatar(
     """
     if current_user.id != user_id:
         raise HTTPException(status_code=403, detail="Can only update your own avatar")
-    
+
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -633,30 +648,55 @@ async def upload_avatar(
 
 @app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["Projects"])
 async def create_project(
-    project: ProjectCreate, 
+    project: ProjectCreate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Создать новый проект (автор должен быть текущим пользователем)
+    Создать новый проект. Текущий пользователь автоматически добавляется в участники,
+    если его нет в списке participants. Роль определяется на основе его типа.
     """
-    # Проверяем, что первый автор - текущий пользователь
-    if project.authors_ids[0] != current_user.id:
-        raise HTTPException(status_code=403, detail="First author must be the current user")
-    
-    # Проверяем существование всех авторов
-    authors = db.query(User).filter(User.id.in_(project.authors_ids)).all()
-    if len(authors) != len(project.authors_ids):
-        raise HTTPException(status_code=404, detail="Один или несколько авторов не найдены")
-    
+    # Проверяем, есть ли текущий пользователь в списке участников
+    creator_in_participants = any(p.user_id == current_user.id for p in project.participants)
+
+    if not creator_in_participants:
+        # Определяем роль по умолчанию на основе типа пользователя
+        default_role = ProjectRole.EXECUTOR
+        if current_user.is_teacher and current_user.teacher_info:
+            roles = current_user.teacher_info.get("roles", [])
+            if ProjectRole.CUSTOMER.value in roles:
+                default_role = ProjectRole.CUSTOMER
+            elif ProjectRole.SUPERVISOR.value in roles:
+                default_role = ProjectRole.SUPERVISOR
+            elif ProjectRole.EXPERT.value in roles:
+                default_role = ProjectRole.EXPERT
+            if current_user.teacher_info.get("curator"):
+                default_role = ProjectRole.CURATOR
+
+        # Добавляем текущего пользователя в participants
+        project.participants.append(
+            Participant(
+                user_id=current_user.id,
+                role=default_role,
+                joined_at=datetime.utcnow()
+            )
+        )
+
+    # Проверяем существование всех указанных пользователей
+    user_ids = [p.user_id for p in project.participants]
+    users = db.query(User).filter(User.id.in_(user_ids)).all()
+    if len(users) != len(user_ids):
+        raise HTTPException(status_code=404, detail="Один или несколько участников не найдены")
+
+    # Создаём проект – используем mode='json' для сериализации
     db_project = Project(
         title=project.title,
         body=project.body,
         underbody=project.underbody,
-        authors_ids=project.authors_ids,
+        participants=[p.model_dump(mode='json') for p in project.participants],
         tasks=project.tasks,
         links=project.links,
-        comments=[]
+        comments=[c.model_dump(mode='json') for c in project.comments] if project.comments else []
     )
     db.add(db_project)
     db.commit()
@@ -665,15 +705,19 @@ async def create_project(
 
 @app.get("/projects/", response_model=List[ProjectResponse], summary="Список проектов", tags=["Projects"])
 async def get_projects(
-    author_id: Optional[int] = Query(None, description="ID автора для фильтрации проектов"),
+    participant_id: Optional[int] = Query(None, alias="author_id", description="ID участника для фильтрации проектов"),
     db: Session = Depends(get_db)
 ):
     """
-    Получить список всех проектов с возможностью фильтрации по автору
+    Получить список всех проектов. Если указан participant_id, возвращаются только проекты,
+    в которых пользователь является участником.
     """
-    if author_id is not None:
+    if participant_id is not None:
         all_projects = db.query(Project).all()
-        projects = [p for p in all_projects if author_id in (p.authors_ids or [])]
+        projects = [
+            p for p in all_projects
+            if any(part.get("user_id") == participant_id for part in (p.participants or []))
+        ]
     else:
         projects = db.query(Project).all()
     return projects
@@ -690,22 +734,27 @@ async def get_project_by_id(project_id: int, db: Session = Depends(get_db)):
 
 @app.put("/projects/{project_id}", response_model=ProjectResponse, summary="Обновление проекта", tags=["Projects"])
 async def update_project(
-    project_id: int, 
-    project_update: ProjectUpdate, 
+    project_id: int,
+    project_update: ProjectUpdate,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """
-    Обновить проект (только для авторов)
+    Обновить проект. Только заказчик или исполнитель могут вносить изменения.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Проверяем, что текущий пользователь - автор проекта
-    if current_user.id not in (project.authors_ids or []):
-        raise HTTPException(status_code=403, detail="Only authors can update the project")
 
+    # Проверяем, что текущий пользователь является заказчиком или исполнителем
+    participant = next(
+        (p for p in project.participants if p.get("user_id") == current_user.id),
+        None
+    )
+    if not participant or participant.get("role") not in [ProjectRole.CUSTOMER.value, ProjectRole.EXECUTOR.value]:
+        raise HTTPException(status_code=403, detail="Only customer or executor can update the project")
+
+    # Обновляем поля, если они переданы
     if project_update.title is not None:
         project.title = project_update.title
     if project_update.body is not None:
@@ -716,23 +765,16 @@ async def update_project(
         project.tasks = project_update.tasks
     if project_update.links is not None:
         project.links = project_update.links
-    if project_update.comments is not None: 
-        project.comments = [comment.dict() for comment in project_update.comments]
-
-    if project_update.authors_ids is not None:
-        # Проверяем существование всех авторов
-        users = db.query(User).filter(User.id.in_(project_update.authors_ids)).all()
-        if len(users) != len(project_update.authors_ids):
-            raise HTTPException(status_code=404, detail="Один или несколько авторов не найдены")
-        project.authors_ids = project_update.authors_ids
-    elif project_update.author_id is not None:
-        author = db.query(User).filter(User.id == project_update.author_id).first()
-        if not author:
-            raise HTTPException(status_code=404, detail=f"Автор с ID {project_update.author_id} не найден")
-        if project.authors_ids is None:
-            project.authors_ids = []
-        if project_update.author_id not in project.authors_ids:
-            project.authors_ids = list(project.authors_ids) + [project_update.author_id]
+    if project_update.comments is not None:
+        # Используем mode='json' для сериализации
+        project.comments = [c.model_dump(mode='json') for c in project_update.comments]
+    if project_update.participants is not None:
+        # Проверяем существование новых участников
+        new_ids = [p.user_id for p in project_update.participants]
+        users = db.query(User).filter(User.id.in_(new_ids)).all()
+        if len(users) != len(new_ids):
+            raise HTTPException(404, "One or more users not found")
+        project.participants = [p.model_dump(mode='json') for p in project_update.participants]
 
     db.commit()
     db.refresh(project)
@@ -746,22 +788,31 @@ async def add_comment(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Добавить комментарий к проекту
+    Добавить комментарий к проекту. Может любой участник проекта.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
+
+    # Проверяем, что пользователь является участником проекта
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can comment")
+
     if project.comments is None:
         project.comments = []
-    
-    # Убеждаемся, что authorId совпадает с текущим пользователем
+
     comment.authorId = current_user.id
-    
-    project.comments.append(comment.dict())
-    db.commit()
-    db.refresh(project)
-    return project
+    # Создаём новый список, чтобы SQLAlchemy отследил изменение
+    new_comments = project.comments + [comment.model_dump(mode='json')]
+    project.comments = new_comments
+
+    try:
+        db.commit()
+        db.refresh(project)
+        return project
+    except Exception as e:
+        print("Ошибка при сохранении комментария:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/search", response_model=List[ProjectResponse], summary="Поиск проектов", tags=["Projects"])
 async def search_projects(
@@ -783,47 +834,344 @@ async def delete_project(
     current_user: User = Depends(get_current_user)
 ):
     """
-    Удалить проект (только для авторов)
+    Удалить проект. Только заказчик (роль customer) может удалить проект.
     """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    
-    # Проверяем, что текущий пользователь - автор проекта
-    if current_user.id not in (project.authors_ids or []):
-        raise HTTPException(status_code=403, detail="Only authors can delete the project")
-    
+
+    # Проверяем, что текущий пользователь является заказчиком
+    participant = next(
+        (p for p in project.participants if p.get("user_id") == current_user.id),
+        None
+    )
+    if not participant or participant.get("role") != ProjectRole.CUSTOMER.value:
+        raise HTTPException(status_code=403, detail="Only customer can delete the project")
+
     db.delete(project)
     db.commit()
     return {"message": f"Project {project_id} deleted successfully"}
+
+@app.post("/projects/{project_id}/tasks/{task_index}/comments", response_model=ProjectResponse, tags=["Projects"])
+async def add_task_comment(
+    project_id: int,
+    task_index: int,
+    comment: Comment,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Добавить комментарий к задаче. Может любой участник проекта.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, что пользователь является участником проекта
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can comment")
+
+    if not project.tasks or task_index < 0 or task_index >= len(project.tasks):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = project.tasks[task_index]
+    if task.get("comments") is None:
+        task["comments"] = []
+
+    comment.authorId = current_user.id
+
+    new_task_comments = task["comments"] + [comment.model_dump(mode='json')]
+    task["comments"] = new_task_comments
+
+    flag_modified(project, "tasks")
+
+    try:
+        db.commit()
+        db.refresh(project)
+        return project
+    except Exception as e:
+        print("Ошибка при сохранении комментария к задаче:", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+# ==================== НОВЫЕ ЭНДПОИНТЫ ДЛЯ ПРЕДЛОЖЕНИЙ ====================
+
+@app.post("/projects/{project_id}/suggestions", response_model=ProjectResponse, tags=["Projects"])
+async def create_suggestion(
+    project_id: int,
+    suggestion_data: SuggestionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Создать предложение по изменению проекта (только для экспертов и научруков, и исполнителей).
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, что пользователь участник и имеет роль эксперт, научрук или исполнитель
+    role = get_participant_role(project, current_user.id)
+    if not role or role not in [ProjectRole.EXPERT.value, ProjectRole.SUPERVISOR.value, ProjectRole.EXECUTOR.value]:
+        raise HTTPException(status_code=403, detail="Only expert, supervisor or executor can create suggestions")
+
+    # Валидация target_type
+    if suggestion_data.target_type not in ["project", "task", "link"]:
+        raise HTTPException(status_code=400, detail="target_type must be 'project', 'task', or 'link'")
+
+    # Создаём предложение
+    new_suggestion = {
+        "id": str(uuid.uuid4()),
+        "author_id": current_user.id,
+        "target_type": suggestion_data.target_type,
+        "target_id": suggestion_data.target_id,
+        "changes": suggestion_data.changes,
+        "status": SuggestionStatus.PENDING.value,
+        "created_at": datetime.utcnow().isoformat(),
+        "comments": []
+    }
+
+    if project.suggestions is None:
+        project.suggestions = []
+    project.suggestions.append(new_suggestion)
+    flag_modified(project, "suggestions")
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.put("/projects/{project_id}/suggestions/{suggestion_id}/accept", response_model=ProjectResponse, tags=["Projects"])
+async def accept_suggestion(
+    project_id: int,
+    suggestion_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Принять предложение. Может принять автор предложения или заказчик, а также исполнитель.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    suggestion = None
+    for s in (project.suggestions or []):
+        if s.get("id") == suggestion_id:
+            suggestion = s
+            break
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    role = get_participant_role(project, current_user.id)
+    if not (suggestion.get("author_id") == current_user.id or role in [ProjectRole.CUSTOMER.value, ProjectRole.EXECUTOR.value]):
+        raise HTTPException(status_code=403, detail="Only suggestion author, customer or executor can accept it")
+
+    suggestion["status"] = SuggestionStatus.ACCEPTED.value
+    flag_modified(project, "suggestions")  # <-- обязательно
+
+    # Если принял заказчик и предложение касается проекта, автоматически применяем изменения
+    if role == ProjectRole.CUSTOMER.value and suggestion["target_type"] == "project":
+        for key, value in suggestion["changes"].items():
+            if hasattr(project, key):
+                setattr(project, key, value)
+
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.put("/projects/{project_id}/suggestions/{suggestion_id}/reject", response_model=ProjectResponse, tags=["Projects"])
+async def reject_suggestion(
+    project_id: int,
+    suggestion_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Отклонить предложение. Может отклонить автор или заказчик, а также исполнитель.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    suggestion = None
+    for s in (project.suggestions or []):
+        if s.get("id") == suggestion_id:
+            suggestion = s
+            break
+    if not suggestion:
+        raise HTTPException(status_code=404, detail="Suggestion not found")
+
+    role = get_participant_role(project, current_user.id)
+    if not (suggestion.get("author_id") == current_user.id or role in [ProjectRole.CUSTOMER.value, ProjectRole.EXECUTOR.value]):
+        raise HTTPException(status_code=403, detail="Only suggestion author, customer or executor can reject it")
+
+    suggestion["status"] = SuggestionStatus.REJECTED.value
+    flag_modified(project, "suggestions")  # <-- обязательно
+    db.commit()
+    db.refresh(project)
+    return project
+
+# ==================== СКРЫТИЕ КОММЕНТАРИЕВ ====================
+
+@app.post("/projects/{project_id}/comments/{comment_id}/hide", response_model=ProjectResponse, tags=["Projects"])
+async def hide_comment(
+    project_id: int,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Скрыть комментарий (только для научного руководителя).
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, что пользователь научный руководитель
+    role = get_participant_role(project, current_user.id)
+    if role != ProjectRole.SUPERVISOR.value:
+        raise HTTPException(status_code=403, detail="Only supervisor can hide comments")
+
+    # Ищем комментарий
+    comment = None
+    for c in (project.comments or []):
+        if c.get("id") == comment_id:
+            comment = c
+            break
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    comment["hidden"] = True
+    flag_modified(project, "comments")
+    db.commit()
+    db.refresh(project)
+    return project
+
+# ==================== ПРИГЛАШЕНИЯ ====================
+
+@app.post("/projects/{project_id}/invite", response_model=Dict[str, str], tags=["Projects"])
+async def create_invitation(
+    project_id: int,
+    invite: InvitationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Создать приглашение в проект (только заказчик или научрук).
+    Возвращает токен для приглашения.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем права: заказчик или научрук
+    role = get_participant_role(project, current_user.id)
+    if role not in [ProjectRole.CUSTOMER.value, ProjectRole.SUPERVISOR.value]:
+        raise HTTPException(status_code=403, detail="Only customer or supervisor can invite")
+
+    # Генерируем уникальный токен
+    token = str(uuid.uuid4())
+    expires_at = datetime.utcnow() + timedelta(days=7)
+
+    # Сохраняем в Redis: invite:{token} -> данные
+    invite_data = {
+        "project_id": project_id,
+        "project_title": project.title,
+        "role": invite.role.value,
+        "invited_by": current_user.id,
+        "email": invite.email,
+        "expires_at": expires_at.isoformat()
+    }
+    redis_client.setex(f"invite:{token}", 7 * 24 * 60 * 60, json.dumps(invite_data))
+
+    # Здесь можно отправить email со ссылкой http://frontend/invite/{token}
+    # await send_invitation_email(invite.email, token, project.title)
+
+    return {"token": token, "message": "Invitation created, email sending not implemented"}
+
+@app.get("/invite/{token}", response_model=InvitationInfo, tags=["Invitations"])
+async def get_invitation_info(token: str):
+    """
+    Получить информацию о приглашении по токену.
+    """
+    data_str = redis_client.get(f"invite:{token}")
+    if not data_str:
+        raise HTTPException(status_code=404, detail="Invitation not found or expired")
+    data = json.loads(data_str)
+    return InvitationInfo(
+        token=token,
+        project_id=data["project_id"],
+        project_title=data["project_title"],
+        role=data["role"],
+        invited_by=data["invited_by"],
+        expires_at=datetime.fromisoformat(data["expires_at"])
+    )
+
+@app.post("/invite/{token}/accept", response_model=ProjectResponse, tags=["Invitations"])
+async def accept_invitation(
+    token: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Принять приглашение. Текущий пользователь добавляется в участники проекта с указанной ролью.
+    """
+    data_str = redis_client.get(f"invite:{token}")
+    if not data_str:
+        raise HTTPException(status_code=404, detail="Invitation not found or expired")
+    data = json.loads(data_str)
+
+    project = db.query(Project).filter(Project.id == data["project_id"]).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, не является ли уже пользователь участником
+    if any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=400, detail="User already in project")
+
+    # Добавляем участника
+    new_participant = {
+        "user_id": current_user.id,
+        "role": data["role"],
+        "joined_at": datetime.utcnow().isoformat(),
+        "invited_by": data["invited_by"]
+    }
+    if project.participants is None:
+        project.participants = []
+    project.participants.append(new_participant)
+
+    # Удаляем использованный токен
+    redis_client.delete(f"invite:{token}")
+
+    db.commit()
+    db.refresh(project)
+    return project
 
 # ==================== AUTH & VERIFICATION ====================
 
 @app.post("/auth/request-verification-code", tags=["Auth"])
 async def request_verification_code(
-    request: dict,  # Оставляем как есть, но добавим отладку
+    request: dict,
     db: Session = Depends(get_db)
 ):
     """
     Запрашивает код подтверждения на указанный email
     """
     print(f"📨 Получен запрос на verification-code: {request}")
-    
+
     email = request.get("email")
     is_teacher = request.get("is_teacher", False)
-    
+
     print(f"📧 Email: {email}, is_teacher: {is_teacher}")
-    
+
     if not email:
         raise HTTPException(status_code=400, detail="Email is required")
-    
+
     # Для учителей проверяем, разрешен ли email
     if is_teacher and not is_email_accepted(email):
         raise HTTPException(
             status_code=403,
             detail="Этот email не разрешен для регистрации учителя"
         )
-    
+
     # Проверяем, не занят ли email
     existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
@@ -831,16 +1179,16 @@ async def request_verification_code(
             status_code=400,
             detail="Email already registered"
         )
-    
+
     # Генерируем код и сохраняем на 10 минут
     code = generate_verification_code()
     redis_client.setex(f"verify:{email}", 600, code)
-    
+
     # Отправляем код по email
     await send_verification_email(email, code)
-    
+
     print(f"✅ Код отправлен на {email}")
-    
+
     return {"message": "Verification code sent"}
 
 @app.post("/auth/request-verification", tags=["Auth"])
@@ -853,20 +1201,20 @@ async def request_verification(
     (для повторной отправки из профиля)
     """
     user = db.query(User).filter(User.email == request.email).first()
-    
+
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     if user.is_verified:
         raise HTTPException(status_code=400, detail="Email already verified")
-    
+
     # Генерируем код и сохраняем на 10 минут
     code = generate_verification_code()
     redis_client.setex(f"verify:{request.email}", 600, code)
-    
+
     # Отправляем код по email
     await send_verification_email(request.email, code)
-    
+
     return {"message": "Verification code sent"}
 
 @app.post("/auth/verify-email", tags=["Auth"])
@@ -879,27 +1227,27 @@ async def verify_email(
     """
     email = request.get("email")
     code = request.get("code")
-    
+
     if not email or not code:
         raise HTTPException(status_code=400, detail="Email and code required")
-    
+
     # Проверяем код
     stored_code = redis_client.get(f"verify:{email}")
     if not stored_code or stored_code != code:
         raise HTTPException(status_code=400, detail="Invalid or expired code")
-    
+
     # Удаляем использованный код
     redis_client.delete(f"verify:{email}")
-    
+
     # Находим пользователя и подтверждаем email
     user = db.query(User).filter(User.email == email).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     user.is_verified = True
     db.commit()
     db.refresh(user)
-    
+
     return {"message": "Email successfully verified", "user": user}
 
 @app.post("/auth/register-with-verification", response_model=UserResponse, tags=["Auth"])
@@ -914,33 +1262,33 @@ async def register_with_verification(
     code = request.get("code")
     user_data = request.get("user_data")
     is_teacher = request.get("is_teacher", False)
-    
+
     if not email or not code or not user_data:
         raise HTTPException(status_code=400, detail="Email, code and user data required")
-    
+
     stored_code = redis_client.get(f"verify:{email}")
     if not stored_code or stored_code != code:
         raise HTTPException(status_code=400, detail="Invalid or expired verification code")
-    
+
     redis_client.delete(f"verify:{email}")
-    
+
     # Для учителей проверяем email
     if is_teacher and not is_email_accepted(email):
         raise HTTPException(
             status_code=403,
             detail="Этот email не разрешен для регистрации учителя"
         )
-    
+
     existing_user = db.query(User).filter(
-        (User.nickname == user_data.get('nickname')) | 
+        (User.nickname == user_data.get('nickname')) |
         (User.email == email)
     ).first()
-    
+
     if existing_user:
         raise HTTPException(status_code=400, detail="Nickname or email already registered")
-    
+
     hashed_password = get_password_hash(user_data.get('password'))
-    
+
     # Подготовка данных в зависимости от типа пользователя
     if is_teacher:
         # Регистрация учителя
@@ -973,7 +1321,7 @@ async def register_with_verification(
             is_teacher=False,
             teacher_info=None
         )
-    
+
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
@@ -988,29 +1336,38 @@ async def auth_login(
     Вход в систему, возвращает access и refresh токены
     """
     user = db.query(User).filter(
-        (User.nickname == credentials.nickname.strip()) | 
+        (User.nickname == credentials.nickname.strip()) |
         (User.email == credentials.nickname.strip())
     ).first()
-    
     if not user:
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+        raise HTTPException(
+            status_code=402,
+            detail="Пользователь с таким логином не найден"
+        )
+
     # Проверка пароля
     if not verify_password(credentials.password.strip(), user.password):
-        raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+        raise HTTPException(
+            status_code=402,
+            detail="Неверный пароль"
+        )
+
+    # Проверка активности
     if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account is deactivated")
-    
+        raise HTTPException(
+            status_code=403,
+            detail="Аккаунт деактивирован"
+        )
+
     access_token = create_access_token({"sub": str(user.id), "is_teacher": user.is_teacher})
     refresh_token = create_refresh_token({"sub": str(user.id), "is_teacher": user.is_teacher})
-    
+
     redis_client.setex(
         f"refresh:{user.id}:{refresh_token}",
         REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
         "valid"
     )
-    
+
     return TokenResponse(
         access_token=access_token,
         refresh_token=refresh_token
@@ -1025,41 +1382,41 @@ async def refresh_token(
     Обновление access токена с помощью refresh токена
     """
     refresh_token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     if not refresh_token:
         raise HTTPException(status_code=401, detail="Refresh token required")
-    
+
     try:
         payload = jwt.decode(refresh_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload.get("sub"))
-        
+
         # Проверяем, что токен ещё действителен в Redis
         if not redis_client.get(f"refresh:{user_id}:{refresh_token}"):
             raise HTTPException(status_code=401, detail="Invalid refresh token")
-        
+
         user = db.query(User).filter(User.id == user_id).first()
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="User not found or inactive")
-        
+
         # Создаём новые токены
         new_access_token = create_access_token({"sub": str(user.id), "is_teacher": user.is_teacher})
         new_refresh_token = create_refresh_token({"sub": str(user.id), "is_teacher": user.is_teacher})
-        
+
         # Удаляем старый refresh токен
         redis_client.delete(f"refresh:{user_id}:{refresh_token}")
-        
+
         # Сохраняем новый
         redis_client.setex(
             f"refresh:{user_id}:{new_refresh_token}",
             REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
             "valid"
         )
-        
+
         return TokenResponse(
             access_token=new_access_token,
             refresh_token=new_refresh_token
         )
-        
+
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid refresh token")
 
@@ -1072,10 +1429,10 @@ async def logout(
     Выход из системы (удаление refresh токена)
     """
     refresh_token = request.headers.get("Authorization", "").replace("Bearer ", "")
-    
+
     if refresh_token:
         redis_client.delete(f"refresh:{current_user.id}:{refresh_token}")
-    
+
     return {"message": "Logged out successfully"}
 
 # ==================== ADMIN UTILITIES ====================
@@ -1094,8 +1451,12 @@ async def delete_all_users(db: Session = Depends(get_db)):
                     os.remove(filepath)
                 except OSError as e:
                     print(f"Ошибка при удалении файла {filepath}: {e}")
-    
-    db.execute(text("UPDATE projects SET authors_ids = '[]'"))
+
+    # Очищаем участников проектов (проекты остаются без участников)
+    projects = db.query(Project).all()
+    for p in projects:
+        p.participants = []
+
     deleted_count = db.query(User).delete()
     db.commit()
     return {"message": f"Удалено пользователей: {deleted_count}"}
@@ -1108,6 +1469,159 @@ async def delete_all_projects(db: Session = Depends(get_db)):
     count = db.query(Project).delete()
     db.commit()
     return {"message": f"Удалено проектов: {count}"}
+
+# ==================== УДАЛЕНИЕ КОММЕНТАРИЕВ ПРОЕКТА ====================
+
+@app.delete("/projects/{project_id}/comments/{comment_id}", response_model=ProjectResponse, tags=["Projects"])
+async def delete_project_comment(
+    project_id: int,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Удалить (скрыть) комментарий проекта. Может автор комментария или заказчик.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can modify comments")
+
+    # Ищем комментарий
+    comment = None
+    for c in (project.comments or []):
+        if c.get("id") == comment_id:
+            comment = c
+            break
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    # Проверяем права: автор комментария или заказчик
+    role = get_participant_role(project, current_user.id)
+    if not (comment.get("authorId") == current_user.id or role == ProjectRole.CUSTOMER.value):
+        raise HTTPException(status_code=403, detail="Only comment author or customer can delete")
+
+    # Помечаем как скрытый
+    comment["hidden"] = True
+    flag_modified(project, "comments")
+    db.commit()
+    db.refresh(project)
+    return project
+
+# ==================== УДАЛЕНИЕ КОММЕНТАРИЕВ ЗАДАЧИ ====================
+
+@app.delete("/projects/{project_id}/tasks/{task_index}/comments/{comment_id}", response_model=ProjectResponse, tags=["Projects"])
+async def delete_task_comment(
+    project_id: int,
+    task_index: int,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    print(f"=== DELETE TASK COMMENT ===")
+    print(f"User {current_user.id} (role: {get_participant_role(project, current_user.id)})")
+    print(f"Project participants: {project.participants}")
+
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can modify comments")
+
+    if not project.tasks or task_index < 0 or task_index >= len(project.tasks):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = project.tasks[task_index]
+    print(f"Task before: {task}")
+
+    if task.get("comments") is None:
+        raise HTTPException(status_code=404, detail="Comments not found")
+
+    comment = None
+    for c in task["comments"]:
+        if c.get("id") == comment_id:
+            comment = c
+            break
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    print(f"Comment found: {comment}")
+    print(f"Comment authorId: {comment.get('authorId')}, current user: {current_user.id}")
+
+    role = get_participant_role(project, current_user.id)
+    if not (comment.get("authorId") == current_user.id or role == ProjectRole.CUSTOMER.value):
+        raise HTTPException(status_code=403, detail="Only comment author or customer can delete")
+
+    comment["hidden"] = True
+    print(f"Comment after marking hidden: {comment}")
+
+    flag_modified(project, "tasks")
+
+    db.commit()
+    db.refresh(project)
+    print(f"Task after commit: {project.tasks[task_index]}")
+    return project
+
+# ==================== ОБНОВЛЕНИЕ КОММЕНТАРИЕВ ЗАДАЧИ ====================
+@app.put("/projects/{project_id}/comments/{comment_id}/read", response_model=ProjectResponse, tags=["Projects"])
+async def mark_project_comment_read(
+    project_id: int,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can modify comments")
+
+    comment = next((c for c in (project.comments or []) if c.get("id") == comment_id), None)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    comment["isRead"] = True
+    flag_modified(project, "comments")
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.put("/projects/{project_id}/tasks/{task_index}/comments/{comment_id}/read", response_model=ProjectResponse, tags=["Projects"])
+async def mark_task_comment_read(
+    project_id: int,
+    task_index: int,
+    comment_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    if not any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=403, detail="Only project participants can modify comments")
+
+    if not project.tasks or task_index < 0 or task_index >= len(project.tasks):
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    task = project.tasks[task_index]
+    comment = next((c for c in (task.get("comments") or []) if c.get("id") == comment_id), None)
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+
+    comment["isRead"] = True
+    flag_modified(project, "tasks")
+    db.commit()
+    db.refresh(project)
+    return project
+
+# Кастомный обработчик OPTIONS (удалён, чтобы избежать конфликта с CORSMiddleware)
+# Если нужны дополнительные заголовки, лучше настроить CORSMiddleware.
+# Оставляем только CORSMiddleware, который уже настроен выше.
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

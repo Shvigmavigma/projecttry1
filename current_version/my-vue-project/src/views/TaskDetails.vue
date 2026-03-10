@@ -4,7 +4,7 @@
       <h1>Детали задачи</h1>
       <div class="header-actions">
         <ThemeToggle />
-        <router-link :to="`/project/${projectId}/task/${taskIndex}/edit`">
+        <router-link v-if="canEditTask" :to="`/project/${projectId}/task/${taskIndex}/edit`">
           <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
         <button class="icon-button home-button" @click="goHome" title="На главную">🏠</button>
@@ -31,13 +31,9 @@
       <section class="task-section">
         <h3>Период выполнения</h3>
         <p>
-          <span :class="{ 'invalid-date': !isValidDateFormat(task.timeline) }">
-            {{ task.timeline || '?' }}
-          </span>
+          <span :class="{ 'invalid-date': !isValidDateFormat(task.timeline) }">{{ task.timeline || '?' }}</span>
           –
-          <span :class="{ 'invalid-date': !isValidDateFormat(task.timelinend) }">
-            {{ task.timelinend || '?' }}
-          </span>
+          <span :class="{ 'invalid-date': !isValidDateFormat(task.timelinend) }">{{ task.timelinend || '?' }}</span>
         </p>
         <span v-if="!isValidDateFormat(task.timeline) && task.timeline" class="date-warning">⚠️ Неверный формат даты начала</span>
         <span v-if="!isValidDateFormat(task.timelinend) && task.timelinend" class="date-warning">⚠️ Неверный формат даты окончания</span>
@@ -47,29 +43,24 @@
       <section class="task-section comments-main-section">
         <div class="section-header">
           <h3>Комментарии к задаче</h3>
-          <button 
-            v-if="isTaskAuthor" 
-            class="comment-toggle-btn"
-            @click="showTaskComments = !showTaskComments"
-          >
+          <button v-if="isProjectParticipant" class="comment-toggle-btn" @click="showTaskComments = !showTaskComments">
             <span class="btn-content">
               <span class="comment-icon">💬</span>
               {{ showTaskComments ? 'Скрыть' : 'Показать' }}
-              <span v-if="unreadTaskCommentsCount > 0" class="header-unread-badge">
-                {{ unreadTaskCommentsCount }}
-              </span>
+              <span v-if="unreadTaskCommentsCount > 0" class="header-unread-badge">{{ unreadTaskCommentsCount }}</span>
             </span>
           </button>
         </div>
-        
+
         <CommentsSection
           v-if="showTaskComments"
           :comments="taskComments"
-          :can-comment="isTaskAuthor"
-          :is-author="isTaskAuthor"
+          :can-comment="isProjectParticipant"
+          :is-author="canEditTask"
+          :can-hide-comments="canHideComments"
           :on-add-comment="addTaskComment"
           :on-mark-as-read="markTaskCommentAsRead"
-          :on-delete-comment="deleteTaskComment"
+          :on-hide-comment="hideTaskComment"
         />
       </section>
 
@@ -78,11 +69,8 @@
         <h3>Общий прогресс</h3>
         <div class="gantt-container">
           <div class="gantt-bar-container">
-            <div
-              class="gantt-bar"
-              :style="{ width: totalProgress + '%', backgroundColor: barColor }"
-              :title="`Прогресс: ${totalProgress.toFixed(1)}%`"
-            ></div>
+            <div class="gantt-bar" :style="{ width: totalProgress + '%', backgroundColor: barColor }"
+                 :title="`Прогресс: ${totalProgress.toFixed(1)}%`"></div>
             <span class="gantt-percent">{{ totalProgress.toFixed(1) }}%</span>
             <span class="gantt-dates">{{ task.timeline || '?' }} – {{ task.timelinend || '?' }}</span>
           </div>
@@ -108,19 +96,10 @@
       <section v-if="subtasks.length > 0" class="subtasks-section">
         <h3>Подзадачи</h3>
         <div class="subtasks-list">
-          <div
-            v-for="subtask in subtasks"
-            :key="subtask.id"
-            class="subtask-item"
-            :class="{ completed: subtask.completed }"
-          >
+          <div v-for="subtask in subtasks" :key="subtask.id" class="subtask-item" :class="{ completed: subtask.completed }">
             <div class="subtask-info">
-              <input
-                type="checkbox"
-                :checked="subtask.completed"
-                @change="toggleSubtask(subtask)"
-                :disabled="actionInProgress"
-              />
+              <input type="checkbox" :checked="subtask.completed" @change="toggleSubtask(subtask)"
+                     :disabled="actionInProgress || !isProjectParticipant" />
               <span class="subtask-title">{{ subtask.title }}</span>
               <span class="subtask-percent">{{ subtask.progressPercent }}%</span>
             </div>
@@ -132,43 +111,28 @@
         </div>
       </section>
 
-      <!-- Ползунок дополнительного прогресса -->
-      <section v-if="showManualProgress" class="progress-section">
+      <!-- Ползунок дополнительного прогресса (только для участников, если задача в работе) -->
+      <section v-if="showManualProgress && isProjectParticipant" class="progress-section">
         <h3>Дополнительный прогресс (вне подзадач)</h3>
         <div class="progress-slider-container">
           <span class="progress-value">{{ sliderValue }}%</span>
           <span class="progress-max"> / {{ maxExtra.toFixed(1) }}%</span>
-          <input
-            type="range"
-            v-model.number="sliderValue"
-            class="progress-slider"
-            :min="0"
-            :max="maxExtra"
-            step="1"
-          />
+          <input type="range" v-model.number="sliderValue" class="progress-slider" :min="0" :max="maxExtra" step="1" />
         </div>
         <button class="apply-progress-button" @click="openConfirmDialog">Применить дополнительный прогресс</button>
       </section>
 
-      <!-- Кнопки действий -->
-      <section class="action-buttons">
+      <!-- Кнопки действий (только для участников) -->
+      <section class="action-buttons" v-if="isProjectParticipant">
         <div v-if="task.status !== 'выполнена'">
-          <button 
-            class="complete-button" 
-            @click="completeTask" 
-            :disabled="actionInProgress || totalProgress < 100"
-            :title="totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : ''"
-          >
+          <button class="complete-button" @click="completeTask"
+                  :disabled="actionInProgress || totalProgress < 100"
+                  :title="totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : ''">
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
           </button>
         </div>
         <div v-else>
-          <button
-            v-if="!showRenewOptions"
-            class="renew-button"
-            @click="showRenewOptions = true"
-            :disabled="actionInProgress"
-          >
+          <button v-if="!showRenewOptions" class="renew-button" @click="showRenewOptions = true" :disabled="actionInProgress">
             🔄 Возобновить
           </button>
           <div v-else class="renew-options">
@@ -191,9 +155,7 @@
     <div v-if="showConfirmDialog" class="modal-overlay" @click.self="closeConfirmDialog">
       <div class="modal-content">
         <h3>Подтверждение</h3>
-        <p>
-          Изменить дополнительный прогресс с {{ oldSliderValue }}% на {{ sliderValue }}%?
-        </p>
+        <p>Изменить дополнительный прогресс с {{ oldSliderValue }}% на {{ sliderValue }}%?</p>
         <div class="modal-actions">
           <button class="modal-confirm" @click="confirmExtraChange">Да</button>
           <button class="modal-cancel" @click="closeConfirmDialog">Нет</button>
@@ -204,19 +166,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import CommentsSection from '@/components/CommentsSection.vue';
-import type { Task, SubTask, Comment } from '@/types';
+import type { Task, SubTask, Comment, ProjectRole } from '@/types';
+import axios from 'axios';
 
-// Генератор ID без uuid
-const generateId = () => {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-};
+const baseUrl = 'http://localhost:8000';
+const generateId = () => Date.now().toString(36) + Math.random().toString(36).substr(2);
 
 const route = useRoute();
 const router = useRouter();
@@ -235,31 +196,40 @@ const actionInProgress = ref(false);
 const showRenewOptions = ref(false);
 const showTaskComments = ref(false);
 
-// Прогресс задачи из базы (общий)
 const savedProgress = ref(0);
-// Значение ползунка (дополнительный прогресс)
 const sliderValue = ref(0);
-// Для модального окна
 const oldSliderValue = ref(0);
 const showConfirmDialog = ref(false);
 
-// Дополнительный прогресс для отображения в breakdown
 const extraProgress = computed(() => sliderValue.value);
 
-// Проверка, является ли пользователь автором проекта
-const isTaskAuthor = computed(() => {
-  if (!authStore.userId || !project.value) return false;
-  return project.value.authors_ids.includes(authStore.userId);
+// Роль текущего пользователя в проекте
+const userRole = computed<ProjectRole | null>(() => {
+  if (!authStore.userId || !project.value) return null;
+  const participant = project.value.participants?.find((p: any) => p.user_id === authStore.userId);
+  return participant?.role || null;
 });
 
-// Комментарии текущей задачи
-const taskComments = computed(() => {
-  return task.value?.comments || [];
-});
+// Является ли пользователь участником проекта
+const isProjectParticipant = computed(() => !!userRole.value);
 
-// Количество непрочитанных комментариев к задаче
+// Может ли редактировать задачу (только заказчик)
+const canEditTask = computed(() => userRole.value === 'customer');
+
+// Может ли скрывать комментарии (научный руководитель)
+const canHideComments = computed(() => userRole.value === 'supervisor');
+
+const taskComments = computed(() => task.value?.comments || []);
+
+// Количество непрочитанных комментариев (исключая скрытые для обычных участников)
 const unreadTaskCommentsCount = computed(() => {
-  return taskComments.value.filter(c => !c.isRead).length;
+  const comments = task.value?.comments || [];
+  if (canHideComments.value) {
+    // куратор видит все, считаем все непрочитанные
+    return comments.filter(c => !c.isRead).length;
+  }
+  // обычные участники не видят скрытые комментарии
+  return comments.filter(c => !c.hidden && !c.isRead).length;
 });
 
 // Вспомогательные функции
@@ -267,50 +237,31 @@ function parseDate(dateStr?: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return null;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
+  const [day, month, year] = parts.map(Number);
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
   return new Date(year, month - 1, day);
-}
-
-function formatTaskDates(task: Task): string {
-  if (task.timelinend) return `${task.timeline || '?'} – ${task.timelinend}`;
-  else if (task.timeline && task.timeline.includes('-')) {
-    const parts = task.timeline.split('-');
-    if (parts.length === 2) return `${parts[0]} – ${parts[1]}`;
-  }
-  return task.timeline || '?';
 }
 
 function isValidDateFormat(dateStr?: string): boolean {
   if (!dateStr) return true;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return false;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
+  const [day, month, year] = parts.map(Number);
   if (isNaN(day) || isNaN(month) || isNaN(year)) return false;
   if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1000 || year > 9999) return false;
   const date = new Date(year, month - 1, day);
   return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
-// Вычисляемые свойства для подзадач
+// Подзадачи
 const subtasks = computed(() => task.value?.subtasks || []);
-const totalSubtasksPercent = computed(() =>
-  subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0)
-);
-const completedSubtasksPercent = computed(() =>
-  subtasks.value.filter(st => st.completed).reduce((sum, st) => sum + (st.progressPercent || 0), 0)
-);
+const totalSubtasksPercent = computed(() => subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0));
+const completedSubtasksPercent = computed(() => subtasks.value.filter(st => st.completed).reduce((sum, st) => sum + (st.progressPercent || 0), 0));
 
-// Максимальное значение дополнительного прогресса
 const maxExtra = computed(() => 100 - completedSubtasksPercent.value);
-
-// Общий прогресс для отображения на Ганте
 const totalProgress = computed(() => completedSubtasksPercent.value + sliderValue.value);
 
-// Показывать ли ползунок (если есть место для дополнительного прогресса и задача в работе)
-const showManualProgress = computed(() => {
-  return task.value?.status === 'в работе' && maxExtra.value > 0;
-});
+const showManualProgress = computed(() => task.value?.status === 'в работе' && maxExtra.value > 0);
 
 // Загрузка
 onMounted(async () => {
@@ -416,9 +367,8 @@ const taskStatusClass = computed(() => {
 });
 
 // --- Методы для задач ---
-
-// Переключение подзадачи
 const toggleSubtask = async (subtask: SubTask) => {
+  if (!isProjectParticipant.value) { alert('Только участники могут изменять подзадачи'); return; }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask) return;
@@ -430,22 +380,13 @@ const toggleSubtask = async (subtask: SubTask) => {
       return st;
     }) || [];
 
-    const newCompletedSum = updatedSubtasks
-      .filter(st => st.completed)
-      .reduce((sum, st) => sum + (st.progressPercent || 0), 0);
+    const newCompletedSum = updatedSubtasks.filter(st => st.completed).reduce((sum, st) => sum + (st.progressPercent || 0), 0);
 
-    if (sliderValue.value > (100 - newCompletedSum)) {
-      sliderValue.value = 100 - newCompletedSum;
-    }
+    if (sliderValue.value > (100 - newCompletedSum)) sliderValue.value = 100 - newCompletedSum;
 
     const newTotal = newCompletedSum + sliderValue.value;
 
-    const updatedTask = {
-      ...currentTask,
-      subtasks: updatedSubtasks,
-      progress: newTotal,
-    };
-
+    const updatedTask = { ...currentTask, subtasks: updatedSubtasks, progress: newTotal };
     const updatedTasks = [...currentProject.tasks];
     updatedTasks[taskIndex] = updatedTask;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
@@ -456,13 +397,11 @@ const toggleSubtask = async (subtask: SubTask) => {
   } catch (err) {
     console.error('Ошибка при переключении подзадачи:', err);
     alert('Не удалось обновить подзадачу');
-  } finally {
-    actionInProgress.value = false;
-  }
+  } finally { actionInProgress.value = false; }
 };
 
-// Завершение задачи
 const completeTask = async () => {
+  if (!isProjectParticipant.value) { alert('Только участники могут завершать задачи'); return; }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask || actionInProgress.value) return;
@@ -475,13 +414,11 @@ const completeTask = async () => {
   } catch (err) {
     console.error('Ошибка при завершении задачи:', err);
     alert('Не удалось завершить задачу');
-  } finally {
-    actionInProgress.value = false;
-  }
+  } finally { actionInProgress.value = false; }
 };
 
-// Изменение статуса (для возобновления)
 const updateTaskStatus = async (newStatus: string) => {
+  if (!isProjectParticipant.value) { alert('Только участники могут изменять статус'); return; }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask || actionInProgress.value) return;
@@ -496,114 +433,81 @@ const updateTaskStatus = async (newStatus: string) => {
   } catch (err) {
     console.error('Ошибка при обновлении статуса задачи:', err);
     alert('Не удалось изменить статус задачи');
-  } finally {
-    actionInProgress.value = false;
-  }
+  } finally { actionInProgress.value = false; }
 };
 
 // --- Функции для работы с комментариями ---
-
-// Добавление комментария к задаче
 const addTaskComment = async (content: string) => {
+  if (!isProjectParticipant.value) { alert('Только участники могут комментировать'); return; }
   if (!project.value || !task.value || !authStore.user) return;
-  
+
   const newComment: Comment = {
     id: generateId(),
     authorId: authStore.user.id,
     content,
     createdAt: new Date().toISOString(),
-    isRead: false
+    isRead: false,
+    hidden: false,
   };
-  
-  const updatedComments = [...(task.value.comments || []), newComment];
-  const updatedTask = { ...task.value, comments: updatedComments };
-  
-  const updatedTasks = [...project.value.tasks];
-  updatedTasks[taskIndex] = updatedTask;
-  
+
   try {
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    
-    task.value = updatedTask;
-    project.value.tasks = updatedTasks;
+    const response = await axios.post(`${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments`, newComment);
+    project.value = response.data;
+    task.value = project.value.tasks[taskIndex];
+    showTaskComments.value = true;
   } catch (error) {
     console.error('Failed to add comment:', error);
     alert('Ошибка при добавлении комментария');
   }
 };
 
-// Отметка комментария задачи как прочитанного
 const markTaskCommentAsRead = async (commentId: string) => {
-  if (!task.value || !isTaskAuthor.value) return;
-  
-  const updatedComments = (task.value.comments || []).map(c => 
-    c.id === commentId ? { ...c, isRead: true } : c
-  );
-  
-  const updatedTask = { ...task.value, comments: updatedComments };
-  const updatedTasks = [...project.value.tasks];
-  updatedTasks[taskIndex] = updatedTask;
-  
+  if (!task.value || !isProjectParticipant.value) return;
   try {
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    
-    task.value = updatedTask;
-    project.value.tasks = updatedTasks;
+    // Используем отдельный эндпоинт для отметки прочитанного
+    await axios.put(`${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments/${commentId}/read`);
+    // Обновляем локально
+    if (task.value.comments) {
+      const updatedComments = task.value.comments.map(c => c.id === commentId ? { ...c, isRead: true } : c);
+      const updatedTask = { ...task.value, comments: updatedComments };
+      const updatedTasks = [...project.value.tasks];
+      updatedTasks[taskIndex] = updatedTask;
+      project.value.tasks = updatedTasks;
+      task.value = updatedTask;
+    }
   } catch (error) {
     console.error('Failed to mark comment as read:', error);
+    alert('Ошибка при отметке комментария');
   }
 };
 
-// Удаление комментария задачи
-const deleteTaskComment = async (commentId: string) => {
-  if (!task.value || !project.value) return;
-  
-  const updatedComments = (task.value.comments || []).filter(c => c.id !== commentId);
-  const updatedTask = { ...task.value, comments: updatedComments };
-  
-  const updatedTasks = [...project.value.tasks];
-  updatedTasks[taskIndex] = updatedTask;
-  
+const hideTaskComment = async (commentId: string) => {
+  if (!project.value) return;
   try {
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    
-    task.value = updatedTask;
-    project.value.tasks = updatedTasks;
+    const response = await axios.delete(`${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments/${commentId}`);
+    project.value = response.data;
+    task.value = project.value.tasks[taskIndex];
   } catch (error) {
-    console.error('Failed to delete comment:', error);
-    alert('Ошибка при удалении комментария');
+    console.error('Failed to hide comment:', error);
+    alert('Ошибка при скрытии комментария');
   }
 };
 
 // Диалог подтверждения изменения дополнительного прогресса
-const openConfirmDialog = () => {
-  oldSliderValue.value = sliderValue.value;
-  showConfirmDialog.value = true;
-};
-
-const closeConfirmDialog = () => {
-  showConfirmDialog.value = false;
-};
-
+const openConfirmDialog = () => { oldSliderValue.value = sliderValue.value; showConfirmDialog.value = true; };
+const closeConfirmDialog = () => { showConfirmDialog.value = false; };
 const confirmExtraChange = async () => {
+  if (!isProjectParticipant.value) { alert('Только участники могут изменять прогресс'); closeConfirmDialog(); return; }
   const currentProject = project.value;
   const currentTask = task.value;
-  if (!currentProject || !currentTask) {
-    closeConfirmDialog();
-    return;
-  }
+  if (!currentProject || !currentTask) { closeConfirmDialog(); return; }
 
   const newTotal = completedSubtasksPercent.value + sliderValue.value;
-
   actionInProgress.value = true;
   try {
     const updatedTasks = [...currentProject.tasks];
-    updatedTasks[taskIndex] = {
-      ...updatedTasks[taskIndex],
-      progress: newTotal,
-    } as Task;
+    updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], progress: newTotal } as Task;
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-
     project.value.tasks = updatedTasks;
     task.value = updatedTasks[taskIndex];
     savedProgress.value = newTotal;
@@ -611,16 +515,14 @@ const confirmExtraChange = async () => {
     console.error('Ошибка при обновлении прогресса:', err);
     alert('Не удалось изменить прогресс');
     sliderValue.value = savedProgress.value - completedSubtasksPercent.value;
-  } finally {
-    actionInProgress.value = false;
-    showConfirmDialog.value = false;
-  }
+  } finally { actionInProgress.value = false; showConfirmDialog.value = false; }
 };
 
 // Навигация
 const goBack = () => router.push(`/project/${projectId}`);
 const goHome = () => router.push('/main');
 </script>
+
 
 <style scoped>
 /* ---------- Общие стили ---------- */

@@ -1,4 +1,19 @@
-// types/index.ts
+// src/types/index.ts
+
+export interface TeacherInfo {
+  roles: string[];       
+  curator: boolean;       
+}
+
+export type ProjectRole = 'customer' | 'supervisor' | 'expert' | 'executor' | 'curator';
+
+export interface Participant {
+  user_id: number;
+  role: ProjectRole;
+  joined_at?: string;
+  invited_by?: number;
+}
+
 export interface User {
   id: number;
   nickname: string;
@@ -11,14 +26,8 @@ export interface User {
   is_verified?: boolean;
   created_at?: string;
   updated_at?: string;
-}
-
-export interface Comment {
-  id: string;
-  authorId: number;
-  content: string;
-  createdAt: string;
-  isRead: boolean;
+  is_teacher?: boolean;
+  teacher_info?: TeacherInfo;
 }
 
 export interface SubTask {
@@ -27,7 +36,6 @@ export interface SubTask {
   description?: string;
   progressPercent: number; 
   completed: boolean;
-  comments?: Comment[];
 }
 
 export interface Task {
@@ -41,15 +49,65 @@ export interface Task {
   comments?: Comment[];
 }
 
+export interface Comment {
+  id: string;
+  authorId: number;
+  content: string;
+  createdAt: string;
+  isRead: boolean;
+  hidden?: boolean;
+}
+
+export interface SuggestionComment {
+  id: string;
+  authorId: number;
+  content: string;
+  createdAt: string;
+  isRead: boolean;
+  hidden?: boolean;
+}
+
+export interface Suggestion {
+  id: string;
+  author_id: number;
+  target_type: string;  // "project" | "task" | "link"
+  target_id?: string;
+  changes: Record<string, any>;
+  status: 'pending' | 'accepted' | 'rejected';
+  created_at: string;
+  comments: SuggestionComment[];
+}
+
+export interface SuggestionCreate {
+  target_type: string;
+  target_id?: string;
+  changes: Record<string, any>;
+}
+
+export interface Invitation {
+  token: string;
+  project_id: number;
+  project_title: string;
+  role: ProjectRole;
+  invited_by: number;
+  expires_at: string;
+}
+
 export interface Project {
   id: number;
   title: string;
   body: string;
   underbody: string;
-  authors_ids: number[];
+  participants: Participant[];
   tasks: Task[];
   links?: ProjectLinks;
   comments?: Comment[];
+  suggestions?: Suggestion[];
+}
+
+export interface ProjectLinks {
+  github?: string;
+  google_drive?: string;
 }
 
 export type ProjectCreate = Omit<Project, 'id'>;
@@ -59,12 +117,7 @@ export interface ProjectUpdate {
   body?: string;
   underbody?: string;
   tasks?: Task[];
-  author_id?: number;
+  participants?: Participant[];
   links?: ProjectLinks;
   comments?: Comment[];
-}
-
-export interface ProjectLinks {
-  github?: string;
-  google_drive?: string;
 }

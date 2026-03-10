@@ -15,6 +15,7 @@ import TaskEdit from '../views/TaskEdit.vue'
 import Profile from '../views/Profile.vue'
 import ProfileEdit from '../views/ProfileEdit.vue'
 import UserProjects from '../views/UserProjects.vue'
+import InviteAccept from '@/views/InviteAccept.vue';
 
 const routes: Array<RouteRecordRaw> = [
   {
@@ -95,6 +96,11 @@ const routes: Array<RouteRecordRaw> = [
     path: '/user/:id/projects',
     name: 'UserProjects',
     component: UserProjects
+  },
+  {
+  path: '/invite/:token',
+  name: 'InviteAccept',
+  component: InviteAccept
   }
 ]
 

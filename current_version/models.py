@@ -1,4 +1,3 @@
-# models.py
 from sqlalchemy import Column, Integer, String, Float, JSON, Boolean, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
@@ -32,7 +31,8 @@ class Project(Base):
     title = Column(String, nullable=False, index=True)
     body = Column(String, nullable=False)
     underbody = Column(String, default="")
-    authors_ids = Column(JSON, nullable=False, default=list) 
+    participants = Column(JSON, default=list)          # список словарей Participant
     tasks = Column(JSON, default=list)
     links = Column(JSON, default=dict)
-    comments= Column(JSON, default=list)
+    comments = Column(JSON, default=list)
+    suggestions = Column(JSON, default=list)           # <-- новое поле для предложений

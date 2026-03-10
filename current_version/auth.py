@@ -31,9 +31,9 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         # Обрезаем до 72 байт (ограничение bcrypt)
         if len(plain_password) > 72:
             plain_password = plain_password[:72]
-        
-        # Сравниваем пароль с хешем
-        return bcrypt.checkpw(plain_password, hashed_password)
+        result = bcrypt.checkpw(plain_password, hashed_password)
+        print(f"Password verification result: {result}")  
+        return result
     except Exception as e:
         print(f"Error verifying password: {e}")
         return False

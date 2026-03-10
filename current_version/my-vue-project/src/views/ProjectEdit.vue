@@ -1,82 +1,139 @@
 <template>
   <div class="project-edit-page">
+    <!-- Уведомление об ошибке/информации -->
+    <Transition name="fade">
+      <div v-if="notification.show" class="notification" :class="notification.type">
+        <span class="notification-message">{{ notification.message }}</span>
+        <button class="notification-close" @click="closeNotification">✕</button>
+      </div>
+    </Transition>
+
     <header class="edit-header">
-      <h1>{{ isEdit ? 'Редактирование проекта' : 'Создание нового проекта' }}</h1>
+      <h1>{{ pageTitle }}</h1>
       <div class="header-actions">
         <ThemeToggle />
         <button class="home-button" @click="goHome" title="На главную">🏠</button>
       </div>
     </header>
 
+    <!-- Информационная подсказка о правах (видна всегда) -->
+    <div v-if="!isNew" class="permission-hint">
+      <span class="hint-icon">ℹ️</span>
+      <span class="hint-text">Редактировать проект могут только заказчик или исполнитель.</span>
+    </div>
+
     <div class="edit-card">
       <form @submit.prevent="handleSubmit">
-        <!-- Основная информация о проекте -->
+        <!-- Основная информация -->
         <div class="form-section">
           <h2>Основная информация</h2>
           <div class="form-group">
             <label for="title">Название проекта</label>
             <input id="title" v-model="form.title" type="text" required />
           </div>
-
           <div class="form-group">
             <label for="body">Описание</label>
             <textarea id="body" v-model="form.body" rows="4" required></textarea>
           </div>
-
           <div class="form-group">
-            <label for="underbody">Дополнительная информация (необязательно)</label>
+            <label for="underbody">Дополнительная информация</label>
             <textarea id="underbody" v-model="form.underbody" rows="2"></textarea>
           </div>
         </div>
 
-        <!-- Управление авторами -->
+        <!-- Участники проекта -->
         <div class="form-section">
-          <h2>Авторы проекта</h2>
-          <div class="authors-section">
-            <div class="current-authors" v-if="authors.length > 0">
-              <span class="authors-label">Текущие авторы:</span>
-              <div class="author-tags">
-                <span
-                  v-for="author in authors"
-                  :key="author.id"
-                  class="author-tag"
+          <h2>Участники проекта</h2>
+          <div class="participants-section">
+            <div v-if="participants.length > 0" class="current-participants">
+              <span class="participants-label">Текущие участники:</span>
+              <div class="participant-tags">
+                <div
+                  v-for="(p, index) in participants"
+                  :key="p.user_id"
+                  class="participant-tag"
                 >
-                  {{ author.nickname }}
+                  <div class="participant-info">
+                    <span class="participant-name">{{ getUserNickname(p.user_id) }}</span>
+                    <span class="participant-role">{{ getRoleDisplay(p.role) }}</span>
+                  </div>
                   <button
                     type="button"
-                    class="remove-author"
-                    @click="removeAuthor(author.id)"
-                    :disabled="authors.length === 1"
-                    :title="authors.length === 1 ? 'Нельзя удалить единственного автора' : 'Удалить автора'"
+                    class="remove-participant"
+                    @click="removeParticipant(index)"
+                    :disabled="participants.length === 1"
+                    :title="participants.length === 1 ? 'Нельзя удалить единственного участника' : 'Удалить'"
                   >✕</button>
-                </span>
+                </div>
               </div>
             </div>
 
-            <div class="author-search">
-              <label for="author-search">Добавить автора по нику</label>
-              <input
-                id="author-search"
-                v-model="searchQuery"
-                type="text"
-                placeholder="Введите никнейм..."
-                @input="searchAuthors"
-              />
+            <div class="participant-search">
+              <label>Добавить участника по никнейму</label>
+              <div class="search-row">
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Введите никнейм..."
+                  @input="searchUsers"
+                />
+                <select v-model="selectedRole">
+                  <option v-for="role in availableRolesForSelected" :key="role" :value="role">
+                    {{ getRoleDisplay(role) }}
+                  </option>
+                </select>
+                <button @click="addParticipant" :disabled="!selectedUser">Добавить</button>
+              </div>
               <div v-if="searchResults.length > 0" class="search-results">
                 <div
                   v-for="user in searchResults"
                   :key="user.id"
                   class="search-result-item"
-                  @click.stop="addAuthor(user.id)"
+                  @click="selectUser(user)"
                 >
                   {{ user.nickname }} ({{ user.fullname }})
+                  <span class="user-roles-hint">({{ getUserRolesHint(user) }})</span>
                 </div>
               </div>
+            </div>
+            <div v-if="isSuggestMode" class="suggest-note">
+              <p>⚠️ В режиме предложения вы можете изменять любые поля – они будут отправлены как предложение.</p>
+            </div>
+            <div v-if="isApplyingSuggestion" class="suggest-note">
+              <p>📝 Вы редактируете проект на основе предложения. После сохранения предложение будет автоматически принято.</p>
             </div>
           </div>
         </div>
 
-        <!-- Управление задачами -->
+        <!-- Приглашение по email (только для существующих проектов) -->
+        <div v-if="isEdit" class="form-section">
+          <h2>Пригласить участника по email</h2>
+          <div class="invite-section">
+            <div class="invite-row">
+              <input
+                v-model="inviteEmail"
+                type="email"
+                placeholder="Email пользователя"
+                class="invite-input"
+              />
+              <select v-model="inviteRole">
+                <option value="executor">Исполнитель</option>
+                <option value="customer">Заказчик</option>
+                <option value="supervisor">Научный руководитель</option>
+                <option value="expert">Эксперт</option>
+                <option value="curator">Куратор</option>
+              </select>
+              <button @click="sendInvite" :disabled="!inviteEmail || sendingInvite">
+                {{ sendingInvite ? 'Отправка...' : 'Отправить приглашение' }}
+              </button>
+            </div>
+            <div v-if="inviteResult" class="invite-result" :class="{ success: inviteSuccess, error: !inviteSuccess }">
+              {{ inviteResult }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Задачи -->
         <div class="form-section">
           <div class="tasks-header">
             <h2>Задачи проекта</h2>
@@ -166,14 +223,20 @@
               </div>
             </div>
           </div>
+          <div v-if="isSuggestMode" class="suggest-note">
+            <p>⚠️ В режиме предложения вы можете изменять задачи, они будут включены в предложение как есть.</p>
+          </div>
+          <div v-if="isApplyingSuggestion" class="suggest-note">
+            <p>📝 Вы редактируете задачи на основе предложения. После сохранения предложение будет автоматически принято.</p>
+          </div>
         </div>
 
-        <!-- Кнопки сохранения/отмены -->
+        <!-- Кнопки отправки -->
         <div class="form-actions">
           <button type="submit" class="save-button" :disabled="saving">
-            {{ saving ? 'Сохранение...' : (isEdit ? 'Сохранить изменения' : 'Создать проект') }}
+            {{ saving ? (isSuggestMode ? 'Отправка...' : (isApplyingSuggestion ? 'Принять и сохранить...' : 'Сохранение...')) : submitButtonText }}
           </button>
-          <button type="button" class="cancel-button" @click="goBack">Отмена</button>
+          <button type="button" class="cancel-button" @click="goBack">{{ cancelButtonText }}</button>
         </div>
       </form>
     </div>
@@ -187,7 +250,10 @@ import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Project, Task, User } from '@/types';
+import type { Project, Task, User, Participant, ProjectRole, Suggestion } from '@/types';
+import axios from 'axios';
+
+const baseUrl = 'http://localhost:8000';
 
 const route = useRoute();
 const router = useRouter();
@@ -195,8 +261,43 @@ const projectsStore = useProjectsStore();
 const authStore = useAuthStore();
 const usersStore = useUsersStore();
 
-const isEdit = computed(() => route.params.id !== undefined);
+const projectId = Number(route.params.id);
+const isNew = route.params.id === 'new';
+const isEdit = computed(() => !isNew);
+const isSuggestMode = ref(false);
+const isApplyingSuggestion = ref(false);
+const applyingSuggestionId = ref<string | null>(null);
+
 const saving = ref(false);
+
+// Уведомления
+const notification = ref({
+  show: false,
+  message: '',
+  type: 'error' as 'error' | 'info' | 'success'
+});
+
+let notificationTimeout: number | null = null;
+
+function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+  notification.value = { show: true, message, type };
+  notificationTimeout = window.setTimeout(() => {
+    notification.value.show = false;
+    notificationTimeout = null;
+  }, duration);
+}
+
+function closeNotification() {
+  notification.value.show = false;
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+}
 
 // Форма проекта
 const form = reactive({
@@ -205,34 +306,196 @@ const form = reactive({
   underbody: '',
 });
 
-// Авторы проекта (объекты User)
-const authors = ref<User[]>([]);
+// Участники
+const participants = ref<Participant[]>([]);
 
-// Поиск авторов
+// Поиск пользователей
+interface UserWithRoles extends User {
+  availableRoles: ProjectRole[];
+}
+
 const searchQuery = ref('');
-const searchResults = ref<User[]>([]);
+const searchResults = ref<UserWithRoles[]>([]);
+const selectedUser = ref<UserWithRoles | null>(null);
+const selectedRole = ref<ProjectRole>('executor');
 
-// Загрузка пользователей при монтировании, если не загружены
+// Приглашение
+const inviteEmail = ref('');
+const inviteRole = ref<ProjectRole>('executor');
+const sendingInvite = ref(false);
+const inviteResult = ref('');
+const inviteSuccess = ref(false);
+
+// Задачи
+type EditableTask = Omit<Task, 'id'> & {
+  id?: number;
+  expanded: boolean;
+  startError?: string;
+  endError?: string;
+};
+const tasks = ref<EditableTask[]>([]);
+
+// Роль текущего пользователя в проекте
+const userRole = ref<ProjectRole | null>(null);
+
+// Право предлагать изменения
+const canSuggest = computed(() =>
+  userRole.value === 'expert' ||
+  userRole.value === 'supervisor' ||
+  userRole.value === 'executor'
+);
+
+// Право на прямое редактирование проекта (заказчик или исполнитель)
+const canEdit = computed(() => userRole.value === 'customer' || userRole.value === 'executor');
+
+const pageTitle = computed(() => {
+  if (isNew) return 'Создание нового проекта';
+  if (isApplyingSuggestion.value) return 'Применить предложение';
+  return isSuggestMode.value ? 'Предложить изменения проекта' : 'Редактирование проекта';
+});
+
+const submitButtonText = computed(() => {
+  if (isNew) return 'Создать проект';
+  if (isApplyingSuggestion.value) return 'Принять и сохранить';
+  return isSuggestMode.value ? 'Отправить предложение' : 'Сохранить изменения';
+});
+
+const cancelButtonText = computed(() => 'Отмена');
+
+// Получение доступных ролей для пользователя
+function getAvailableRoles(user: User): ProjectRole[] {
+  if (!user.is_teacher) {
+    return ['executor'];
+  }
+  const teacherRoles = (user.teacher_info?.roles || []) as ProjectRole[];
+  // Добавляем executor как всегда доступный
+  if (!teacherRoles.includes('executor')) {
+    teacherRoles.push('executor');
+  }
+  // Добавляем curator, если есть флаг
+  if (user.teacher_info?.curator && !teacherRoles.includes('curator')) {
+    teacherRoles.push('curator');
+  }
+  return teacherRoles;
+}
+
+// Поиск пользователей
+function searchUsers() {
+  if (!searchQuery.value.trim()) {
+    searchResults.value = [];
+    return;
+  }
+  const q = searchQuery.value.toLowerCase();
+  const allUsers = usersStore.users.filter(u =>
+    u.nickname.toLowerCase().includes(q) &&
+    !participants.value.some(p => p.user_id === u.id)
+  );
+  searchResults.value = allUsers.map(user => ({
+    ...user,
+    availableRoles: getAvailableRoles(user)
+  })).slice(0, 10);
+}
+
+function selectUser(user: UserWithRoles) {
+  selectedUser.value = user;
+  searchQuery.value = user.nickname;
+  searchResults.value = [];
+  // Устанавливаем роль по умолчанию – первую доступную
+  selectedRole.value = user.availableRoles[0];
+}
+
+// Доступные роли для выбранного пользователя
+const availableRolesForSelected = computed(() => {
+  if (!selectedUser.value) return [];
+  return selectedUser.value.availableRoles;
+});
+
+// Подсказка о доступных ролях для отображения в результатах поиска
+function getUserRolesHint(user: UserWithRoles): string {
+  return user.availableRoles.map(r => getRoleDisplay(r)).join(', ');
+}
+
+function addParticipant() {
+  if (!selectedUser.value) return;
+  participants.value.push({
+    user_id: selectedUser.value.id,
+    role: selectedRole.value,
+    joined_at: new Date().toISOString(),
+  });
+  selectedUser.value = null;
+  searchQuery.value = '';
+  selectedRole.value = 'executor';
+}
+
+function removeParticipant(index: number) {
+  if (participants.value.length === 1) {
+    showNotification('Проект должен иметь хотя бы одного участника', 'info');
+    return;
+  }
+  participants.value.splice(index, 1);
+}
+
+// Загрузка данных
 onMounted(async () => {
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
 
-  if (isEdit.value) {
-    const id = Number(route.params.id);
-    if (isNaN(id)) {
-      console.error('Неверный ID проекта');
+  // Проверяем query-параметр suggestion
+  const suggestionParam = route.query.suggestion as string | undefined;
+  if (suggestionParam && !isNew) {
+    isApplyingSuggestion.value = true;
+    applyingSuggestionId.value = suggestionParam;
+  }
+
+  if (!isNew) {
+    if (isNaN(projectId)) {
+      router.push('/main');
       return;
     }
-    const project = await projectsStore.fetchProjectById(id);
-    if (project) {
+    const project = await projectsStore.fetchProjectById(projectId);
+    if (!project) {
+      router.push('/main');
+      return;
+    }
+
+    const participant = project.participants?.find(p => p.user_id === authStore.userId);
+    userRole.value = participant?.role || null;
+
+    // Если мы в режиме применения предложения, загружаем предложение
+    if (isApplyingSuggestion.value && applyingSuggestionId.value) {
+      const suggestion = project.suggestions?.find(s => s.id === applyingSuggestionId.value);
+      if (!suggestion) {
+        showNotification('Предложение не найдено', 'error');
+        router.push(`/project/${projectId}`);
+        return;
+      }
+      // Применяем изменения из предложения к форме
+      applySuggestionChanges(suggestion);
+    } else {
+      // Обычный режим – проверяем права
+      const modeParam = route.query.mode;
+      if (modeParam === 'suggest') {
+        if (!canSuggest.value) {
+          showNotification('У вас нет прав для создания предложения', 'error');
+          setTimeout(() => router.push(`/project/${projectId}`), 2000);
+          return;
+        }
+        isSuggestMode.value = true;
+      } else {
+        if (!canEdit.value) {
+          showNotification('У вас нет прав для редактирования проекта. Только заказчик или исполнитель могут редактировать.', 'info');
+          setTimeout(() => router.push(`/project/${projectId}`), 2000);
+          return;
+        }
+        isSuggestMode.value = false;
+      }
+
+      // Заполняем форму текущими данными проекта
       form.title = project.title;
       form.body = project.body;
       form.underbody = project.underbody || '';
-
-      // Загружаем авторов из usersStore
-      authors.value = usersStore.users.filter(u => project.authors_ids.includes(u.id));
-
+      participants.value = project.participants || [];
       tasks.value = (project.tasks || []).map(task => ({
         ...task,
         expanded: false,
@@ -240,69 +503,84 @@ onMounted(async () => {
         endError: undefined,
       }));
     }
+  } else {
+    isSuggestMode.value = false;
+    isApplyingSuggestion.value = false;
   }
 });
 
-// Поиск пользователей
-function searchAuthors() {
-  if (!searchQuery.value.trim()) {
-    searchResults.value = [];
-    return;
+// Применение изменений из предложения
+function applySuggestionChanges(suggestion: Suggestion) {
+  const changes = suggestion.changes;
+  if (changes.title) form.title = changes.title;
+  if (changes.body) form.body = changes.body;
+  if (changes.underbody) form.underbody = changes.underbody;
+  if (changes.participants) participants.value = changes.participants;
+  if (changes.tasks) {
+    tasks.value = changes.tasks.map((task: any) => ({
+      ...task,
+      expanded: false,
+      startError: undefined,
+      endError: undefined,
+    }));
   }
-  const q = searchQuery.value.toLowerCase();
-  searchResults.value = usersStore.users.filter(u =>
-    u.nickname.toLowerCase().includes(q) &&
-    !authors.value.some(a => a.id === u.id)
-  ).slice(0, 10);
 }
 
-// Добавить автора
-function addAuthor(userId: number) {
-  const user = usersStore.users.find(u => u.id === userId);
-  if (user && !authors.value.some(a => a.id === userId)) {
-    authors.value.push(user);
-  }
-  searchQuery.value = '';
-  searchResults.value = [];
+function getUserNickname(id: number): string {
+  const user = usersStore.users.find(u => u.id === id);
+  return user ? user.nickname : `ID: ${id}`;
 }
 
-// Удалить автора (с защитой от удаления последнего)
-function removeAuthor(userId: number) {
-  if (authors.value.length === 1) {
-    alert('Проект должен иметь хотя бы одного автора');
-    return;
-  }
-  authors.value = authors.value.filter(a => a.id !== userId);
+function getRoleDisplay(role: ProjectRole): string {
+  const map: Record<ProjectRole, string> = {
+    customer: 'Заказчик',
+    supervisor: 'Научный руководитель',
+    expert: 'Эксперт',
+    executor: 'Исполнитель',
+    curator: 'Куратор',
+  };
+  return map[role];
 }
 
-// Тип для задачи с дополнительными UI-полями (id опциональный)
-type EditableTask = Omit<Task, 'id'> & {
-  id?: number;
-  expanded: boolean;
-  startError?: string;
-  endError?: string;
-};
+async function sendInvite() {
+  if (!inviteEmail.value || !isEdit.value) return;
+  sendingInvite.value = true;
+  inviteResult.value = '';
+  inviteSuccess.value = false;
 
-const tasks = ref<EditableTask[]>([]);
+  try {
+    const response = await axios.post(`${baseUrl}/projects/${projectId}/invite`, {
+      email: inviteEmail.value,
+      role: inviteRole.value,
+    });
+    inviteResult.value = `Приглашение создано! Токен: ${response.data.token}`;
+    inviteSuccess.value = true;
+    inviteEmail.value = '';
+    showNotification('Приглашение успешно создано', 'success');
+  } catch (error: any) {
+    console.error('Failed to create invite:', error);
+    const msg = error.response?.data?.detail || 'Ошибка при создании приглашения';
+    inviteResult.value = msg;
+    inviteSuccess.value = false;
+    showNotification(msg, 'error');
+  } finally {
+    sendingInvite.value = false;
+  }
+}
 
-// Форматирование даты (маска)
+// --- Функции для задач ---
 function formatDateInput(value: string): string {
   let digits = value.replace(/\D/g, '');
   if (digits.length > 8) digits = digits.slice(0, 8);
   let formatted = '';
   if (digits.length > 0) {
     formatted = digits.slice(0, 2);
-    if (digits.length > 2) {
-      formatted += '.' + digits.slice(2, 4);
-    }
-    if (digits.length > 4) {
-      formatted += '.' + digits.slice(4, 8);
-    }
+    if (digits.length > 2) formatted += '.' + digits.slice(2, 4);
+    if (digits.length > 4) formatted += '.' + digits.slice(4, 8);
   }
   return formatted;
 }
 
-// Обновление даты с маской
 function updateTaskDate(index: number, field: 'timeline' | 'timelinend', event: Event) {
   const task = tasks.value[index];
   if (!task) return;
@@ -313,29 +591,26 @@ function updateTaskDate(index: number, field: 'timeline' | 'timelinend', event: 
   else task.endError = undefined;
 }
 
-// Парсинг даты (для проверки)
 function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return null;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
+  const [day, month, year] = parts.map(Number);
   if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
   return new Date(year, month - 1, day);
 }
 
-// Валидация даты
 function isValidDate(dateStr: string): boolean {
   if (!dateStr) return true;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return false;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
+  const [day, month, year] = parts.map(Number);
   if (isNaN(day) || isNaN(month) || isNaN(year)) return false;
   if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1000 || year > 9999) return false;
   const date = new Date(year, month - 1, day);
   return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
-// Добавить новую задачу
 function addTask() {
   tasks.value.push({
     title: '',
@@ -349,18 +624,11 @@ function addTask() {
   });
 }
 
-// Сохранить задачу (проверка и сворачивание)
 function saveTask(index: number) {
   const task = tasks.value[index];
   if (!task) return;
-  if (!task.title.trim()) {
-    alert('Название задачи не может быть пустым');
-    return;
-  }
-  if (!task.body.trim()) {
-    alert('Описание задачи не может быть пустым');
-    return;
-  }
+  if (!task.title.trim()) { showNotification('Название задачи не может быть пустым', 'info'); return; }
+  if (!task.body.trim()) { showNotification('Описание задачи не может быть пустым', 'info'); return; }
 
   task.startError = undefined;
   task.endError = undefined;
@@ -381,7 +649,7 @@ function saveTask(index: number) {
     const start = parseDate(task.timeline);
     const end = parseDate(task.timelinend);
     if (start && end && start > end) {
-      alert('Дата начала не может быть позже даты окончания');
+      showNotification('Дата начала не может быть позже даты окончания', 'info');
       return;
     }
   }
@@ -389,79 +657,347 @@ function saveTask(index: number) {
   task.expanded = false;
 }
 
-// Удалить задачу
 function removeTask(index: number) {
-  if (index >= 0 && index < tasks.value.length) {
-    tasks.value.splice(index, 1);
-  }
+  tasks.value.splice(index, 1);
 }
 
-// Развернуть/свернуть задачу
 function toggleTaskExpand(index: number) {
-  const task = tasks.value[index];
-  if (task) {
-    task.expanded = !task.expanded;
-  }
+  tasks.value[index].expanded = !tasks.value[index].expanded;
 }
 
-// Сохранение проекта
+// Сохранение / отправка предложения
 async function handleSubmit() {
   if (!form.title.trim() || !form.body.trim()) {
-    alert('Заполните название и описание проекта');
+    showNotification('Заполните название и описание проекта', 'info');
     return;
   }
 
   for (let i = 0; i < tasks.value.length; i++) {
     if (tasks.value[i]?.expanded) {
-      alert('Завершите редактирование всех задач (нажмите "Готово") перед сохранением проекта');
+      showNotification('Завершите редактирование всех задач перед сохранением', 'info');
       return;
     }
+  }
+
+  if (participants.value.length === 0 && !isNew) {
+    showNotification('Проект должен иметь хотя бы одного участника', 'info');
+    return;
   }
 
   const projectData = {
     title: form.title,
     body: form.body,
     underbody: form.underbody || '',
-    authors_ids: authors.value.map(a => a.id),
+    participants: participants.value,
     tasks: tasks.value.map(({ expanded, startError, endError, ...task }) => task),
   };
 
   saving.value = true;
+
   try {
-    if (isEdit.value) {
-      const id = Number(route.params.id);
-      if (isNaN(id)) {
-        throw new Error('Неверный ID проекта');
-      }
-      await projectsStore.updateProject(id, projectData);
-      router.push(`/project/${id}`);
-    } else {
-      if (!authStore.userId) {
-        throw new Error('Пользователь не авторизован');
-      }
-      // Добавляем текущего пользователя, если его ещё нет в списке
-      const currentUserId = authStore.userId;
-      if (!projectData.authors_ids.includes(currentUserId)) {
-        projectData.authors_ids.push(currentUserId);
-      }
-      const payload = projectData;
-      const created = await projectsStore.createProject(payload);
-      router.push(`/project/${created.id}`);
+    // Если мы в режиме применения предложения, сначала принимаем предложение
+    if (isApplyingSuggestion.value && applyingSuggestionId.value) {
+      await axios.put(`${baseUrl}/projects/${projectId}/suggestions/${applyingSuggestionId.value}/accept`);
+      showNotification('Предложение принято', 'success');
     }
-  } catch (err) {
+
+    if (isNew) {
+      if (!authStore.userId) throw new Error('Пользователь не авторизован');
+      if (!participants.value.some(p => p.user_id === authStore.userId)) {
+        const defaultRole: ProjectRole = 'executor';
+        projectData.participants.push({
+          user_id: authStore.userId,
+          role: defaultRole,
+          joined_at: new Date().toISOString(),
+        });
+      }
+      const created = await projectsStore.createProject(projectData);
+      showNotification('Проект успешно создан', 'success');
+      router.push(`/project/${created.id}`);
+    } else if (isSuggestMode.value) {
+      const suggestionData = {
+        target_type: 'project',
+        changes: projectData,
+      };
+      await axios.post(`${baseUrl}/projects/${projectId}/suggestions`, suggestionData);
+      showNotification('Предложение отправлено!', 'success');
+      setTimeout(() => router.push(`/project/${projectId}`), 1500);
+    } else {
+      await projectsStore.updateProject(projectId, projectData);
+      showNotification('Изменения сохранены', 'success');
+      setTimeout(() => router.push(`/project/${projectId}`), 1500);
+    }
+  } catch (err: any) {
     console.error('Ошибка сохранения проекта:', err);
-    alert('Не удалось сохранить проект');
+    if (err.response?.status === 403) {
+      showNotification('У вас недостаточно прав. Только заказчик или исполнитель могут редактировать проект.', 'error');
+    } else {
+      showNotification('Не удалось сохранить изменения. Пожалуйста, попробуйте позже.', 'error');
+    }
   } finally {
     saving.value = false;
   }
 }
 
-// Навигация
 const goHome = () => router.push('/main');
 const goBack = () => router.go(-1);
 </script>
 
 <style scoped>
+/* Уведомления */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  box-shadow: var(--shadow-strong);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 400px;
+  backdrop-filter: blur(4px);
+}
+
+.notification.error {
+  background-color: rgba(244, 67, 54, 0.9);
+  border-left: 4px solid #d32f2f;
+}
+
+.notification.success {
+  background-color: rgba(76, 175, 80, 0.9);
+  border-left: 4px solid #388e3c;
+}
+
+.notification.info {
+  background-color: rgba(33, 150, 243, 0.9);
+  border-left: 4px solid #1976d2;
+}
+
+.notification-message {
+  flex: 1;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* Подсказка о правах */
+.permission-hint {
+  max-width: 800px;
+  margin: 0 auto 15px;
+  padding: 10px 16px;
+  background-color: rgba(33, 150, 243, 0.1);
+  border-left: 4px solid #2196f3;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.hint-icon {
+  font-size: 1.2rem;
+}
+
+/* Остальные стили остаются без изменений */
+.invite-section {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.invite-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+.invite-input {
+  flex: 2;
+  padding: 10px 12px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+.invite-row select {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+.invite-row button {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+.invite-row button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+.invite-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.invite-result {
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+.invite-result.success {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+  border: 1px solid #4caf50;
+}
+.invite-result.error {
+  background: rgba(244, 67, 54, 0.1);
+  color: #f44336;
+  border: 1px solid #f44336;
+}
+.participants-section {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.current-participants {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.participants-label {
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.participant-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.participant-tag {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.participant-info {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.participant-name {
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.participant-role {
+  font-size: 0.85rem;
+  color: var(--accent-color);
+  background: rgba(66, 185, 131, 0.1);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.remove-participant {
+  background: none;
+  border: none;
+  color: var(--danger-color);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.remove-participant:hover:not(:disabled) {
+  background: var(--danger-bg);
+}
+.remove-participant:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+.search-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.search-row select {
+  padding: 8px;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text-primary);
+}
+.search-row button {
+  padding: 8px 16px;
+  background: var(--accent-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.search-results {
+  position: absolute;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  margin-top: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 10;
+}
+.search-result-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.search-result-item:hover {
+  background: var(--bg-page);
+}
+.user-roles-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-left: 8px;
+}
 .project-edit-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -469,7 +1005,6 @@ const goBack = () => router.go(-1);
   box-sizing: border-box;
   transition: background 0.3s;
 }
-
 .edit-header {
   display: flex;
   justify-content: space-between;
@@ -477,19 +1012,16 @@ const goBack = () => router.go(-1);
   max-width: 800px;
   margin: 0 auto 20px;
 }
-
 .edit-header h1 {
   color: var(--heading-color);
   font-size: 2rem;
   margin: 0;
 }
-
 .header-actions {
   display: flex;
   gap: 10px;
   align-items: center;
 }
-
 .home-button {
   background: none;
   border: none;
@@ -505,15 +1037,12 @@ const goBack = () => router.go(-1);
   transition: background 0.2s;
   color: var(--text-primary);
 }
-
 .home-button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-
 .light-theme .home-button:hover {
   background: rgba(0, 0, 0, 0.05);
 }
-
 .edit-card {
   background: var(--bg-card);
   border-radius: 32px;
@@ -523,30 +1052,25 @@ const goBack = () => router.go(-1);
   margin: 0 auto;
   transition: background 0.3s;
 }
-
 .form-section {
   margin-bottom: 40px;
   padding-bottom: 20px;
   border-bottom: 2px dashed var(--border-color);
 }
-
 .form-section h2 {
   color: var(--heading-color);
   margin-bottom: 20px;
   font-weight: 500;
 }
-
 .form-group {
   margin-bottom: 20px;
 }
-
 label {
   display: block;
   margin-bottom: 6px;
   color: var(--text-secondary);
   font-weight: 500;
 }
-
 input, select, textarea {
   width: 100%;
   padding: 12px 16px;
@@ -560,144 +1084,38 @@ input, select, textarea {
   background: var(--input-bg);
   color: var(--text-primary);
 }
-
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-color);
   box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
-
 .dark-theme input:focus,
 .dark-theme select:focus,
 .dark-theme textarea:focus {
   box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
 }
-
 input.invalid {
   border-color: var(--danger-color);
 }
-
 .error-message {
   display: block;
   margin-top: 4px;
   color: var(--danger-color);
   font-size: 0.85rem;
 }
-
 textarea {
   resize: vertical;
 }
-
 .form-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
-
-/* Стили для авторов */
-.authors-section {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.current-authors {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-
-.authors-label {
-  font-weight: 500;
-  color: var(--text-secondary);
-}
-
-.author-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.author-tag {
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  padding: 6px 12px;
-  border-radius: 30px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 0.9rem;
-  color: var(--text-primary);
-}
-
-.remove-author {
-  background: none;
-  border: none;
-  color: var(--danger-color);
-  font-size: 1.1rem;
-  cursor: pointer;
-  padding: 0 2px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  width: 20px;
-  height: 20px;
-  transition: background 0.2s;
-}
-
-.remove-author:hover:not(:disabled) {
-  background: var(--danger-bg);
-}
-
-.remove-author:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.author-search {
-  position: relative;
-}
-
-.search-results {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--bg-card);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  margin-top: 4px;
-  max-height: 200px;
-  overflow-y: auto;
-  z-index: 10;
-  box-shadow: var(--shadow);
-}
-
-.search-result-item {
-  padding: 10px 16px;
-  cursor: pointer;
-  border-bottom: 1px solid var(--border-color);
-  transition: background 0.2s;
-  color: var(--text-primary);
-}
-
-.search-result-item:hover {
-  background: var(--bg-page);
-}
-
-.search-result-item:last-child {
-  border-bottom: none;
-}
-
-/* Стили для задач */
 .tasks-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
 }
-
 .add-task-button {
   background: var(--accent-color);
   color: var(--button-text);
@@ -709,11 +1127,13 @@ textarea {
   cursor: pointer;
   transition: background 0.2s;
 }
-
-.add-task-button:hover {
+.add-task-button:hover:not(:disabled) {
   background: var(--accent-hover);
 }
-
+.add-task-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .no-tasks {
   text-align: center;
   color: var(--text-secondary);
@@ -722,25 +1142,21 @@ textarea {
   background: var(--bg-page);
   border-radius: 12px;
 }
-
 .tasks-list {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-
 .task-item {
   border: 1px solid var(--border-color);
   border-radius: 12px;
   background: var(--bg-card);
   transition: all 0.2s;
 }
-
 .task-item.expanded {
   border-color: var(--accent-color);
   box-shadow: var(--shadow);
 }
-
 .task-compact {
   display: flex;
   justify-content: space-between;
@@ -749,11 +1165,9 @@ textarea {
   cursor: pointer;
   border-radius: 12px;
 }
-
 .task-compact:hover {
   background: var(--bg-page);
 }
-
 .task-title {
   font-weight: 500;
   color: var(--text-primary);
@@ -761,7 +1175,6 @@ textarea {
   word-wrap: break-word;
   hyphens: auto;
 }
-
 .delete-task-button {
   background: none;
   border: none;
@@ -776,29 +1189,28 @@ textarea {
   justify-content: center;
   transition: background 0.2s;
 }
-
-.delete-task-button:hover {
+.delete-task-button:hover:not(:disabled) {
   background: var(--danger-bg);
 }
-
+.delete-task-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
 .task-form {
   padding: 20px;
   border-top: 1px solid var(--border-color);
 }
-
 .task-form-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 20px;
 }
-
 .task-form-header h3 {
   color: var(--heading-color);
   margin: 0;
   font-weight: 500;
 }
-
 .close-task-form {
   background: none;
   border: none;
@@ -813,17 +1225,14 @@ textarea {
   justify-content: center;
   transition: background 0.2s;
 }
-
 .close-task-form:hover {
   background: var(--bg-page);
 }
-
 .task-form-actions {
   display: flex;
   gap: 12px;
   margin-top: 20px;
 }
-
 .save-task-button, .cancel-task-button {
   flex: 1;
   padding: 10px;
@@ -834,32 +1243,39 @@ textarea {
   cursor: pointer;
   transition: all 0.2s;
 }
-
 .save-task-button {
   background: var(--accent-color);
   color: var(--button-text);
 }
-
-.save-task-button:hover {
+.save-task-button:hover:not(:disabled) {
   background: var(--accent-hover);
 }
-
+.save-task-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 .cancel-task-button {
   background: var(--bg-page);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
-
 .cancel-task-button:hover {
   background: var(--bg-card);
 }
-
+.suggest-note {
+  margin-top: 15px;
+  padding: 10px;
+  background: rgba(255, 152, 0, 0.1);
+  border-left: 4px solid #ff9800;
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
 .form-actions {
   display: flex;
   gap: 12px;
   margin-top: 40px;
 }
-
 .save-button, .cancel-button {
   flex: 1;
   padding: 14px;
@@ -870,31 +1286,25 @@ textarea {
   cursor: pointer;
   transition: all 0.2s;
 }
-
 .save-button {
   background-color: var(--accent-color);
   color: var(--button-text);
 }
-
 .save-button:hover:not(:disabled) {
   background-color: var(--accent-hover);
 }
-
 .save-button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
 .cancel-button {
   background-color: var(--bg-page);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
 }
-
 .cancel-button:hover {
   background-color: var(--bg-card);
 }
-
 .loading, .error {
   text-align: center;
   color: var(--text-primary);

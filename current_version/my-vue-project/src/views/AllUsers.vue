@@ -8,11 +8,35 @@
       </div>
     </header>
 
+    <div class="filter-tabs">
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'all' }"
+        @click="setFilter('all')"
+      >
+        Все
+      </button>
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'students' }"
+        @click="setFilter('students')"
+      >
+        Ученики
+      </button>
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'teachers' }"
+        @click="setFilter('teachers')"
+      >
+        Учителя
+      </button>
+    </div>
+
     <div class="search-container">
       <input
         v-model="search"
-        placeholder="Поиск по никнейму, имени или email"
-        @input="searchUsers"
+        :placeholder="searchPlaceholder"
+        @input="onSearchInput"
       />
     </div>
 
@@ -37,15 +61,25 @@
         <h3 class="user-nickname">{{ user.nickname }}</h3>
         <p class="user-fullname">{{ user.fullname }}</p>
         <p class="user-email">{{ user.email }}</p>
-        <div class="user-class">Класс: {{ user.class }}</div>
-        <div v-if="user.speciality" class="user-speciality">{{ user.speciality }}</div>
+
+        <template v-if="!user.is_teacher">
+          <div class="user-class">Класс: {{ user.class }}</div>
+          <div v-if="user.speciality" class="user-speciality">{{ user.speciality }}</div>
+        </template>
+
+        <template v-else>
+          <div v-if="user.teacher_info" class="user-roles">
+            {{ getRolesText(user) }}
+          </div>
+          <div v-if="user.speciality" class="user-speciality">Предмет: {{ user.speciality }}</div>
+        </template>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, watch, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
@@ -57,35 +91,59 @@ const users = ref<User[]>([]);
 const search = ref('');
 const loading = ref(true);
 const imageError = ref<Record<number, boolean>>({});
+const filterType = ref<'all' | 'students' | 'teachers'>('all');
 
-// Базовый URL бэкенда (при необходимости замените на переменную окружения)
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
 const baseUrl = 'http://localhost:8000';
 
-// Функция для формирования полного URL аватарки
 const avatarUrl = (avatar: string) => `${baseUrl}/avatars/${avatar}`;
 
-onMounted(async () => {
-  await loadUsers();
+const searchPlaceholder = computed(() => {
+  switch (filterType.value) {
+    case 'students': return 'Поиск по ученикам...';
+    case 'teachers': return 'Поиск по учителям...';
+    default: return 'Поиск по всем пользователям...';
+  }
 });
 
 async function loadUsers() {
   loading.value = true;
-  await usersStore.fetchAllUsers();
-  users.value = usersStore.users;
-  imageError.value = {};
-  loading.value = false;
+  try {
+    if (filterType.value === 'students') {
+      await usersStore.fetchStudents(search.value || undefined);
+    } else if (filterType.value === 'teachers') {
+      await usersStore.fetchTeachers(search.value || undefined);
+    } else {
+      await usersStore.fetchUsers(undefined, search.value || undefined);
+    }
+    users.value = usersStore.users;
+    imageError.value = {};
+  } catch (error) {
+    console.error('Ошибка загрузки пользователей:', error);
+  } finally {
+    loading.value = false;
+  }
 }
 
-async function searchUsers() {
-  loading.value = true;
-  if (search.value) {
-    await usersStore.searchUsers(search.value);
-  } else {
-    await usersStore.fetchAllUsers();
-  }
-  users.value = usersStore.users;
+watch([filterType, search], () => {
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    loadUsers();
+  }, 300);
+});
+
+onMounted(() => {
+  loadUsers();
+});
+
+function onSearchInput() {
   imageError.value = {};
-  loading.value = false;
+}
+
+function setFilter(type: 'all' | 'students' | 'teachers') {
+  filterType.value = type;
+  imageError.value = {};
 }
 
 function goToUser(id: number) {
@@ -94,6 +152,22 @@ function goToUser(id: number) {
 
 function goHome() {
   router.push('/main');
+}
+
+function getRoleName(role: string): string {
+  switch (role) {
+    case 'supervisor': return 'Научный руководитель';
+    case 'expert': return 'Эксперт';
+    case 'customer': return 'Заказчик';
+    default: return role;
+  }
+}
+
+function getRolesText(user: User): string {
+  if (!user.is_teacher || !user.teacher_info) return '';
+  const roles = user.teacher_info.roles.map(role => getRoleName(role));
+  if (user.teacher_info.curator) roles.push('Куратор');
+  return roles.join(', ');
 }
 </script>
 
@@ -153,6 +227,33 @@ function goHome() {
   background: rgba(0, 0, 0, 0.05);
 }
 
+.filter-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 30px;
+}
+
+.tab-button {
+  padding: 10px 30px;
+  border: 2px solid var(--border-color);
+  border-radius: 50px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab-button.active {
+  border-color: var(--accent-color);
+  background: rgba(66, 185, 131, 0.1);
+  color: var(--accent-color);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(66, 185, 131, 0.2);
+}
+
 .search-container {
   max-width: 600px;
   margin: 0 auto 30px;
@@ -203,6 +304,7 @@ function goHome() {
   align-items: center;
   text-align: center;
   border: 1px solid var(--border-color);
+  animation: fadeIn 0.3s ease;
 }
 
 .user-card:hover {
@@ -211,7 +313,19 @@ function goHome() {
   border-color: var(--accent-color);
 }
 
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .user-avatar {
+  position: relative;
   width: 60px;
   height: 60px;
   background: var(--accent-color);
@@ -264,6 +378,14 @@ function goHome() {
   color: var(--text-secondary);
   font-size: 0.9rem;
   margin-top: 4px;
+}
+
+.user-roles {
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  max-width: 100%;
+  word-break: break-word;
 }
 
 .loading, .no-users {

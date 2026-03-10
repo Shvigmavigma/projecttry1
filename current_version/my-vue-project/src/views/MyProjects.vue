@@ -24,25 +24,27 @@
         <h3 class="card-title">{{ project.title }}</h3>
         <p class="card-description">{{ project.body.slice(0, 150) }}...</p>
         <div class="card-footer">
-          <span class="authors-label">Авторы:</span>
-          <div class="authors-list">
+          <span class="participants-label">Участники:</span>
+          <div class="participants-list">
             <div
-              v-for="(authorId, index) in project.authors_ids"
-              :key="authorId"
-              class="author-item"
-              @click.stop="goToUser(authorId)"
+              v-for="participant in project.participants"
+              :key="participant.user_id"
+              class="participant-item"
+              @click.stop="goToUser(participant.user_id)"
             >
-              <div class="author-avatar">
+              <div class="participant-avatar">
                 <img
-                  v-if="getAuthorAvatar(authorId)"
-                  :src="getAuthorAvatar(authorId)"
-                  :alt="getAuthorNickname(authorId)"
-                  @error="handleImageError(authorId)"
+                  v-if="getUserAvatar(participant.user_id) && !avatarError[participant.user_id]"
+                  :src="getUserAvatar(participant.user_id)"
+                  :alt="getUserNickname(participant.user_id)"
+                  @error="avatarError[participant.user_id] = true"
                 />
-                <span v-else>{{ getAuthorInitials(authorId) }}</span>
+                <span v-else>{{ getUserInitials(participant.user_id) }}</span>
+                <span class="role-badge" :title="getRoleDisplay(participant.role)">
+                  {{ getRoleIcon(participant.role) }}
+                </span>
               </div>
-              <span class="author-name">{{ getAuthorNickname(authorId) }}</span>
-              <span v-if="index < project.authors_ids.length - 1">,</span>
+              <span class="participant-name">{{ getUserNickname(participant.user_id) }}</span>
             </div>
           </div>
         </div>
@@ -58,7 +60,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
 import axios from 'axios';
-import type { Project } from '@/types';
+import type { Project, ProjectRole } from '@/types';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -67,18 +69,18 @@ const usersStore = useUsersStore();
 const projects = ref<Project[]>([]);
 const loading = ref(true);
 const error = ref('');
-const authorImageErrors = ref<Record<number, boolean>>({});
+const avatarError = ref<Record<number, boolean>>({});
 const authChecked = ref(false);
 
 const currentUserId = computed(() => authStore.user?.id);
 const isAuthenticated = computed(() => authStore.isAuthenticated);
 
-// Проверяем авторизацию при монтировании
+const baseUrl = 'http://localhost:8000';
+
 onMounted(async () => {
   console.log('MyProjects mounted - checking auth...');
   console.log('Token exists:', !!localStorage.getItem('access_token'));
   
-  // Проверяем авторизацию
   if (!authStore.isAuthenticated) {
     const isValid = await authStore.checkAuth();
     console.log('Auth check result:', isValid);
@@ -94,7 +96,6 @@ onMounted(async () => {
   await loadUserProjects();
 });
 
-// Следим за изменением isAuthenticated
 watch(isAuthenticated, (newVal) => {
   console.log('isAuthenticated changed:', newVal);
   if (!newVal) {
@@ -117,26 +118,23 @@ async function loadUserProjects() {
   error.value = '';
 
   try {
-    // Загружаем всех пользователей для получения авторов
     if (usersStore.users.length === 0) {
       await usersStore.fetchAllUsers();
     }
 
-    // Загружаем проекты текущего пользователя
-    console.log('Fetching projects for author_id:', currentUserId.value);
-    const response = await axios.get(`/projects/?author_id=${currentUserId.value}`);
+    console.log('Fetching projects for participant_id:', currentUserId.value);
+    const response = await axios.get(`/projects/?participant_id=${currentUserId.value}`);
     projects.value = response.data;
     console.log('Projects loaded:', projects.value.length);
+    avatarError.value = {};
   } catch (err: any) {
     console.error('Error loading projects:', err);
     
     if (err.response?.status === 401) {
-      // Если токен истек, пробуем обновить авторизацию
       const isValid = await authStore.checkAuth();
       if (isValid) {
-        // Повторяем запрос
         try {
-          const response = await axios.get(`/projects/?author_id=${currentUserId.value}`);
+          const response = await axios.get(`/projects/?participant_id=${currentUserId.value}`);
           projects.value = response.data;
         } catch (retryErr) {
           error.value = 'Ошибка загрузки проектов';
@@ -152,24 +150,42 @@ async function loadUserProjects() {
   }
 }
 
-function getAuthorNickname(id: number): string {
+function getUserNickname(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
   return user ? user.nickname : `ID: ${id}`;
 }
 
-function getAuthorAvatar(id: number): string | undefined {
-  if (authorImageErrors.value[id]) return undefined;
+function getUserAvatar(id: number): string | undefined {
+  if (avatarError.value[id]) return undefined;
   const user = usersStore.users.find(u => u.id === id);
-  return user?.avatar ? `http://localhost:8000/avatars/${user.avatar}` : undefined;
+  return user?.avatar ? `${baseUrl}/avatars/${user.avatar}` : undefined;
 }
 
-function getAuthorInitials(id: number): string {
+function getUserInitials(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
   return user?.nickname?.charAt(0).toUpperCase() || '?';
 }
 
-function handleImageError(id: number) {
-  authorImageErrors.value[id] = true;
+function getRoleIcon(role: ProjectRole): string {
+  const icons: Record<ProjectRole, string> = {
+    customer: '📋',
+    supervisor: '🎓',
+    expert: '🔍',
+    executor: '👤',
+    curator: '👑',
+  };
+  return icons[role] || '';
+}
+
+function getRoleDisplay(role: ProjectRole): string {
+  const map: Record<ProjectRole, string> = {
+    customer: 'Заказчик',
+    supervisor: 'Научный руководитель',
+    expert: 'Эксперт',
+    executor: 'Исполнитель',
+    curator: 'Куратор',
+  };
+  return map[role];
 }
 
 function goToProject(id: number) {
@@ -237,6 +253,10 @@ function goHome() {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.light-theme .home-button:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .projects-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -296,21 +316,21 @@ function goHome() {
   word-wrap: break-word;
 }
 
-.authors-label {
+.participants-label {
   font-weight: 500;
   color: var(--text-secondary);
   margin-right: 4px;
   flex-shrink: 0;
 }
 
-.authors-list {
+.participants-list {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 2px;
+  gap: 8px;
 }
 
-.author-item {
+.participant-item {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -318,15 +338,17 @@ function goHome() {
   padding: 2px 4px;
   border-radius: 4px;
   transition: background-color 0.2s;
+  position: relative;
 }
 
-.author-item:hover {
+.participant-item:hover {
   background: rgba(128, 128, 128, 0.1);
 }
 
-.author-avatar {
-  width: 20px;
-  height: 20px;
+.participant-avatar {
+  position: relative;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: var(--accent-color);
   color: var(--button-text);
@@ -339,14 +361,14 @@ function goHome() {
   flex-shrink: 0;
 }
 
-.author-avatar img {
+.participant-avatar img {
   width: 100%;
   height: 100%;
   object-fit: cover;
   display: block;
 }
 
-.author-avatar span {
+.participant-avatar span {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -354,20 +376,36 @@ function goHome() {
   height: 100%;
 }
 
-.author-name {
+.role-badge {
+  position: absolute;
+  bottom: -4px;
+  right: -6px;
+  font-size: 10px;
+  background: var(--bg-card);
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  border: 1px solid var(--border-color);
+}
+
+.participant-name {
   color: var(--link-color);
   text-decoration: underline;
   font-size: 0.9rem;
   overflow-wrap: break-word;
   word-wrap: break-word;
   hyphens: auto;
-  max-width: 100px;
+  max-width: 80px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.author-item:hover .author-name {
+.participant-item:hover .participant-name {
   color: var(--link-hover);
 }
 
