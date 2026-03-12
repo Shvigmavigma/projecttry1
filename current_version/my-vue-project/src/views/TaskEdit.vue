@@ -1,222 +1,184 @@
 <template>
-  <div class="task-details-page">
-    <header class="details-header">
-      <h1>Детали задачи</h1>
+  <div class="task-edit-page">
+    <!-- Уведомления -->
+    <Transition name="fade">
+      <div v-if="notification.show" class="notification" :class="notification.type">
+        <span class="notification-message">{{ notification.message }}</span>
+        <button class="notification-close" @click="closeNotification">✕</button>
+      </div>
+    </Transition>
+
+    <header class="edit-header">
+      <h1>{{ isNew ? 'Создание задачи' : 'Редактирование задачи' }}</h1>
       <div class="header-actions">
         <ThemeToggle />
-        <!-- Кнопка редактирования только для заказчика -->
-        <router-link
-          v-if="canEditTask"
-          :to="`/project/${projectId}/task/${taskIndex}/edit`"
-        >
-          <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
-        </router-link>
-        <button class="icon-button home-button" @click="goHome" title="На главную">🏠</button>
-        <button class="icon-button back-button" @click="goBack" title="Вернуться к проекту">◀</button>
+        <button class="home-button" @click="goHome" title="На главную">🏠</button>
+        <button class="back-button" @click="goBack" title="Вернуться к задаче">◀</button>
       </div>
     </header>
 
     <div v-if="loading" class="loading">Загрузка...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
+    <div v-else-if="!hasEditPermission" class="error">У вас нет прав для редактирования этой задачи</div>
 
-    <div v-else-if="task" class="task-card" :class="taskStatusClass">
-      <h2 class="task-title">{{ task.title }}</h2>
-
-      <section class="task-section">
-        <h3>Статус</h3>
-        <p>{{ task.status }}</p>
-      </section>
-
-      <section class="task-section">
-        <h3>Описание</h3>
-        <p>{{ task.body }}</p>
-      </section>
-
-      <section class="task-section">
-        <h3>Период выполнения</h3>
-        <p>
-          <span :class="{ 'invalid-date': !isValidDateFormat(task.timeline) }">
-            {{ task.timeline || '?' }}
-          </span>
-          –
-          <span :class="{ 'invalid-date': !isValidDateFormat(task.timelinend) }">
-            {{ task.timelinend || '?' }}
-          </span>
-        </p>
-        <span v-if="!isValidDateFormat(task.timeline) && task.timeline" class="date-warning">⚠️ Неверный формат даты начала</span>
-        <span v-if="!isValidDateFormat(task.timelinend) && task.timelinend" class="date-warning">⚠️ Неверный формат даты окончания</span>
-      </section>
-
-      <!-- Комментарии к задаче -->
-      <section class="task-section comments-main-section">
-        <div class="section-header">
-          <h3>Комментарии к задаче</h3>
-          <button
-            v-if="isProjectParticipant"
-            class="comment-toggle-btn"
-            @click="showTaskComments = !showTaskComments"
-          >
-            <span class="btn-content">
-              <span class="comment-icon">💬</span>
-              {{ showTaskComments ? 'Скрыть' : 'Показать' }}
-              <span v-if="unreadTaskCommentsCount > 0" class="header-unread-badge">
-                {{ unreadTaskCommentsCount }}
-              </span>
-            </span>
-          </button>
-        </div>
-
-        <CommentsSection
-          v-if="showTaskComments"
-          :comments="taskComments"
-          :can-comment="isProjectParticipant"
-          :is-author="canEditTask"
-          :can-hide-comments="canHideComments"
-          :on-add-comment="addTaskComment"
-          :on-mark-as-read="markTaskCommentAsRead"
-          :on-hide-comment="hideTaskComment"
-        />
-      </section>
-
-      <!-- Диаграмма Ганта (общий прогресс) -->
-      <section class="gantt-section">
-        <h3>Общий прогресс</h3>
-        <div class="gantt-container">
-          <div class="gantt-bar-container">
-            <div
-              class="gantt-bar"
-              :style="{ width: totalProgress + '%', backgroundColor: barColor }"
-              :title="`Прогресс: ${totalProgress.toFixed(1)}%`"
-            ></div>
-            <span class="gantt-percent">{{ totalProgress.toFixed(1) }}%</span>
-            <span class="gantt-dates">{{ task.timeline || '?' }} – {{ task.timelinend || '?' }}</span>
+    <div v-else class="edit-card">
+      <form @submit.prevent="handleSubmit">
+        <!-- Основная информация -->
+        <div class="form-section">
+          <h2>Основная информация</h2>
+          <div class="form-group">
+            <label for="title">Название задачи</label>
+            <input id="title" v-model="form.title" type="text" required />
           </div>
-          <div class="gantt-labels">
-            <span>{{ task.timeline || '?' }}</span>
-            <span>Сегодня</span>
-            <span>{{ task.timelinend || '?' }}</span>
+          <div class="form-group">
+            <label for="body">Описание</label>
+            <textarea id="body" v-model="form.body" rows="4" required></textarea>
           </div>
-        </div>
-        <div class="progress-breakdown" v-if="subtasks.length > 0">
-          <div class="breakdown-item">
-            <span class="breakdown-label">Подзадачи:</span>
-            <span class="breakdown-value">{{ completedSubtasksPercent.toFixed(1) }}%</span>
-          </div>
-          <div class="breakdown-item">
-            <span class="breakdown-label">Дополнительно:</span>
-            <span class="breakdown-value">{{ extraProgress }}%</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Подзадачи -->
-      <section v-if="subtasks.length > 0" class="subtasks-section">
-        <h3>Подзадачи</h3>
-        <div class="subtasks-list">
-          <div
-            v-for="subtask in subtasks"
-            :key="subtask.id"
-            class="subtask-item"
-            :class="{ completed: subtask.completed }"
-          >
-            <div class="subtask-info">
+          <div class="form-row">
+            <div class="form-group">
+              <label for="timeline">Дата начала (ДД.ММ.ГГГГ)</label>
               <input
-                type="checkbox"
-                :checked="subtask.completed"
-                @change="toggleSubtask(subtask)"
-                :disabled="actionInProgress || !isProjectParticipant"
+                id="timeline"
+                :value="form.timeline"
+                @input="updateTimeline"
+                type="text"
+                placeholder="01.01.2025"
+                :class="{ 'invalid': timelineError }"
               />
-              <span class="subtask-title">{{ subtask.title }}</span>
-              <span class="subtask-percent">{{ subtask.progressPercent }}%</span>
+              <span v-if="timelineError" class="error-message">{{ timelineError }}</span>
             </div>
-            <p v-if="subtask.description" class="subtask-description">{{ subtask.description }}</p>
+            <div class="form-group">
+              <label for="timelinend">Дата окончания (ДД.ММ.ГГГГ)</label>
+              <input
+                id="timelinend"
+                :value="form.timelinend"
+                @input="updateTimelinend"
+                type="text"
+                placeholder="31.12.2025"
+                :class="{ 'invalid': timelinendError }"
+              />
+              <span v-if="timelinendError" class="error-message">{{ timelinendError }}</span>
+            </div>
           </div>
         </div>
-        <div class="subtasks-summary">
-          Выполнено подзадач: {{ completedSubtasksPercent.toFixed(1) }}% / {{ totalSubtasksPercent.toFixed(1) }}%
-        </div>
-      </section>
 
-      <!-- Ползунок дополнительного прогресса (только для участников, если задача в работе) -->
-      <section v-if="showManualProgress && isProjectParticipant" class="progress-section">
-        <h3>Дополнительный прогресс (вне подзадач)</h3>
-        <div class="progress-slider-container">
-          <span class="progress-value">{{ sliderValue }}%</span>
-          <span class="progress-max"> / {{ maxExtra.toFixed(1) }}%</span>
-          <input
-            type="range"
-            v-model.number="sliderValue"
-            class="progress-slider"
-            :min="0"
-            :max="maxExtra"
-            step="1"
-          />
-        </div>
-        <button class="apply-progress-button" @click="openConfirmDialog">Применить дополнительный прогресс</button>
-      </section>
-
-      <!-- Кнопки действий (только для участников) -->
-      <section class="action-buttons" v-if="isProjectParticipant">
-        <div v-if="task.status !== 'выполнена'">
-          <button
-            class="complete-button"
-            @click="completeTask"
-            :disabled="actionInProgress || totalProgress < 100"
-            :title="totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : ''"
-          >
-            {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
-          </button>
-        </div>
-        <div v-else>
-          <button
-            v-if="!showRenewOptions"
-            class="renew-button"
-            @click="showRenewOptions = true"
-            :disabled="actionInProgress"
-          >
-            🔄 Возобновить
-          </button>
-          <div v-else class="renew-options">
-            <button class="status-option work" @click="updateTaskStatus('в работе')" :disabled="actionInProgress">В работе</button>
-            <button class="status-option waiting" @click="updateTaskStatus('ожидает')" :disabled="actionInProgress">Ожидает</button>
-            <button class="status-option cancel" @click="showRenewOptions = false">Отмена</button>
+        <!-- Статус задачи -->
+        <div class="form-section">
+          <h2>Статус задачи</h2>
+          <div class="status-selector">
+            <label>Текущий статус: <strong>{{ getStatusText(form.status) }}</strong></label>
+            <div class="status-buttons">
+              <button
+                type="button"
+                class="status-btn"
+                :class="{ active: form.status === 'в работе' }"
+                @click="form.status = 'в работе'"
+                :disabled="form.status === 'в работе'"
+              >
+                В работе
+              </button>
+              <button
+                type="button"
+                class="status-btn"
+                :class="{ active: form.status === 'ожидает' }"
+                @click="form.status = 'ожидает'"
+                :disabled="form.status === 'ожидает'"
+              >
+                Ожидает
+              </button>
+              <button
+                type="button"
+                class="status-btn"
+                :class="{ active: form.status === 'выполнена' }"
+                @click="form.status = 'выполнена'"
+                :disabled="form.status === 'выполнена'"
+              >
+                Выполнена
+              </button>
+            </div>
           </div>
         </div>
-      </section>
 
-      <!-- Бейджики состояния -->
-      <section class="status-badges">
-        <span v-if="isInvalid" class="badge invalid">Невозможный дедлайн</span>
-        <span v-if="isOverdue" class="badge overdue">Просрочено</span>
-        <span v-if="isUrgent && !isOverdue && !isInvalid" class="badge urgent">Срочно</span>
-      </section>
-    </div>
+        <!-- Подзадачи -->
+        <div class="form-section">
+          <div class="subtasks-header">
+            <h2>Подзадачи</h2>
+            <button type="button" class="add-subtask-button" @click="addSubtask">+ Добавить подзадачу</button>
+          </div>
 
-    <!-- Модальное окно подтверждения -->
-    <div v-if="showConfirmDialog" class="modal-overlay" @click.self="closeConfirmDialog">
-      <div class="modal-content">
-        <h3>Подтверждение</h3>
-        <p>
-          Изменить дополнительный прогресс с {{ oldSliderValue }}% на {{ sliderValue }}%?
-        </p>
-        <div class="modal-actions">
-          <button class="modal-confirm" @click="confirmExtraChange">Да</button>
-          <button class="modal-cancel" @click="closeConfirmDialog">Нет</button>
+          <div v-if="subtasks.length === 0" class="no-subtasks">
+            Нет подзадач. Добавьте подзадачи, чтобы распределить прогресс.
+          </div>
+
+          <div v-else class="subtasks-list">
+            <div
+              v-for="(subtask, index) in subtasks"
+              :key="subtask.id"
+              class="subtask-item"
+            >
+              <div class="subtask-header">
+                <input
+                  v-model="subtask.title"
+                  placeholder="Название подзадачи"
+                  class="subtask-title-input"
+                />
+                <button
+                  type="button"
+                  class="remove-subtask"
+                  @click="removeSubtask(index)"
+                  title="Удалить подзадачу"
+                >✕</button>
+              </div>
+              <textarea
+                v-model="subtask.description"
+                placeholder="Описание (необязательно)"
+                rows="2"
+                class="subtask-description"
+              ></textarea>
+              <div class="subtask-percent">
+                <label>Процент от задачи:</label>
+                <input
+                  type="number"
+                  v-model.number="subtask.progressPercent"
+                  min="0"
+                  max="100"
+                  step="1"
+                />%
+                <span class="percent-hint">(сумма: {{ totalSubtasksPercent }}%)</span>
+              </div>
+              <div class="subtask-completed">
+                <label>
+                  <input type="checkbox" v-model="subtask.completed" />
+                  Выполнено
+                </label>
+              </div>
+            </div>
+          </div>
+          <div v-if="totalSubtasksPercent > 100" class="error-message">
+            Сумма процентов подзадач не может превышать 100%! Текущая сумма: {{ totalSubtasksPercent }}%
+          </div>
         </div>
-      </div>
+
+        <!-- Кнопки сохранения -->
+        <div class="form-actions">
+          <button type="submit" class="save-button" :disabled="saving || totalSubtasksPercent > 100">
+            {{ saving ? 'Сохранение...' : 'Сохранить' }}
+          </button>
+          <button type="button" class="cancel-button" @click="goBack">Отмена</button>
+        </div>
+      </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed } from 'vue';
+import { ref, reactive, onMounted, computed } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import CommentsSection from '@/components/CommentsSection.vue';
-import type { Task, SubTask, Comment, ProjectRole } from '@/types';
+import type { Project, Task, SubTask, ProjectRole } from '@/types';
 import axios from 'axios';
 
 const baseUrl = 'http://localhost:8000';
@@ -230,46 +192,91 @@ const usersStore = useUsersStore();
 
 const projectId = Number(route.params.projectId);
 const taskIndex = Number(route.params.taskIndex);
-
-const project = ref<any>(null);
-const task = ref<Task | null>(null);
+const isNew = route.path.includes('/new'); // если путь /project/:projectId/task/new, но у нас нет такого, оставим для совместимости
 const loading = ref(true);
 const error = ref('');
-const actionInProgress = ref(false);
-const showRenewOptions = ref(false);
-const showTaskComments = ref(false);
+const saving = ref(false);
+const hasEditPermission = ref(false);
 
-const savedProgress = ref(0);
-const sliderValue = ref(0);
-const oldSliderValue = ref(0);
-const showConfirmDialog = ref(false);
+const project = ref<Project | null>(null);
+const originalTask = ref<Task | null>(null);
 
-const extraProgress = computed(() => sliderValue.value);
-
-// Роль текущего пользователя в проекте
-const userRole = computed<ProjectRole | null>(() => {
-  if (!authStore.userId || !project.value) return null;
-  const participant = project.value.participants?.find((p: any) => p.user_id === authStore.userId);
-  return participant?.role || null;
+// Форма задачи
+const form = reactive({
+  title: '',
+  body: '',
+  timeline: '',
+  timelinend: '',
+  status: 'ожидает' as Task['status'],
+  progress: 0,
 });
 
-// Является ли пользователь участником проекта
-const isProjectParticipant = computed(() => !!userRole.value);
+// Подзадачи
+interface EditableSubTask extends SubTask {
+  // уже все поля есть
+}
+const subtasks = ref<EditableSubTask[]>([]);
 
-// Может ли редактировать задачу (только заказчик)
-const canEditTask = computed(() => userRole.value === 'customer');
+// Ошибки дат
+const timelineError = ref('');
+const timelinendError = ref('');
 
-// Может ли скрывать комментарии (научный руководитель)
-const canHideComments = computed(() => userRole.value === 'supervisor');
-
-const taskComments = computed(() => task.value?.comments || []);
-
-const unreadTaskCommentsCount = computed(() => {
-  return taskComments.value.filter(c => !c.isRead).length;
+// Уведомления
+const notification = ref({
+  show: false,
+  message: '',
+  type: 'error' as 'error' | 'info' | 'success'
 });
 
-// Вспомогательные функции
-function parseDate(dateStr?: string): Date | null {
+let notificationTimeout: number | null = null;
+
+function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+  notification.value = { show: true, message, type };
+  notificationTimeout = window.setTimeout(() => {
+    notification.value.show = false;
+    notificationTimeout = null;
+  }, duration);
+}
+
+function closeNotification() {
+  notification.value.show = false;
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+}
+
+// Форматирование даты (маска)
+function formatDateInput(value: string): string {
+  let digits = value.replace(/\D/g, '');
+  if (digits.length > 8) digits = digits.slice(0, 8);
+  let formatted = '';
+  if (digits.length > 0) {
+    formatted = digits.slice(0, 2);
+    if (digits.length > 2) formatted += '.' + digits.slice(2, 4);
+    if (digits.length > 4) formatted += '.' + digits.slice(4, 8);
+  }
+  return formatted;
+}
+
+function updateTimeline(e: Event) {
+  const input = e.target as HTMLInputElement;
+  form.timeline = formatDateInput(input.value);
+  timelineError.value = '';
+}
+
+function updateTimelinend(e: Event) {
+  const input = e.target as HTMLInputElement;
+  form.timelinend = formatDateInput(input.value);
+  timelinendError.value = '';
+}
+
+// Валидация даты
+function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return null;
@@ -278,7 +285,7 @@ function parseDate(dateStr?: string): Date | null {
   return new Date(year, month - 1, day);
 }
 
-function isValidDateFormat(dateStr?: string): boolean {
+function isValidDate(dateStr: string): boolean {
   if (!dateStr) return true;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return false;
@@ -289,336 +296,179 @@ function isValidDateFormat(dateStr?: string): boolean {
   return date.getDate() === day && date.getMonth() === month - 1 && date.getFullYear() === year;
 }
 
-// Подзадачи
-const subtasks = computed(() => task.value?.subtasks || []);
-const totalSubtasksPercent = computed(() =>
-  subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0)
-);
-const completedSubtasksPercent = computed(() =>
-  subtasks.value.filter(st => st.completed).reduce((sum, st) => sum + (st.progressPercent || 0), 0)
-);
-
-const maxExtra = computed(() => 100 - completedSubtasksPercent.value);
-const totalProgress = computed(() => completedSubtasksPercent.value + sliderValue.value);
-
-const showManualProgress = computed(() => {
-  return task.value?.status === 'в работе' && maxExtra.value > 0;
+// Сумма процентов подзадач
+const totalSubtasksPercent = computed(() => {
+  return subtasks.value.reduce((sum, st) => sum + (st.progressPercent || 0), 0);
 });
 
-// Загрузка
+// Перевод статуса
+function getStatusText(status: string): string {
+  const map: Record<string, string> = {
+    'в работе': 'В работе',
+    'ожидает': 'Ожидает',
+    'выполнена': 'Выполнена',
+  };
+  return map[status] || status;
+}
+
+// Загрузка данных
 onMounted(async () => {
-  if (isNaN(projectId) || isNaN(taskIndex) || taskIndex < 0) {
-    error.value = 'Некорректные параметры';
+  if (isNaN(projectId)) {
+    error.value = 'Некорректный ID проекта';
     loading.value = false;
     return;
+  }
+
+  // Загружаем пользователей для авторов (не обязательно)
+  if (usersStore.users.length === 0) {
+    await usersStore.fetchAllUsers();
   }
 
   try {
     project.value = await projectsStore.fetchProjectById(projectId);
-    if (!project.value || !project.value.tasks || !project.value.tasks[taskIndex]) {
-      error.value = 'Задача не найдена';
-    } else {
-      const loadedTask = project.value.tasks[taskIndex];
-      task.value = loadedTask;
-      savedProgress.value = loadedTask.progress ?? 0;
+    if (!project.value) {
+      error.value = 'Проект не найден';
+      return;
+    }
 
-      if (loadedTask.subtasks && loadedTask.subtasks.length > 0) {
-        const completedSum = loadedTask.subtasks
-          .filter((st: SubTask) => st.completed)
-          .reduce((sum: number, st: SubTask) => sum + (st.progressPercent || 0), 0);
-        sliderValue.value = Math.max(0, savedProgress.value - completedSum);
-      } else {
-        sliderValue.value = savedProgress.value;
-      }
+    // Проверка прав: заказчик, исполнитель, куратор
+    const participant = project.value.participants?.find(p => p.user_id === authStore.userId);
+    const role = participant?.role;
+    hasEditPermission.value = role === 'customer' || role === 'executor' || role === 'curator';
+
+    if (!hasEditPermission.value) {
+      error.value = 'У вас нет прав для редактирования задач в этом проекте';
+      return;
+    }
+
+    if (taskIndex < 0 || taskIndex >= (project.value.tasks?.length || 0)) {
+      error.value = 'Задача не найдена';
+      return;
+    }
+
+    originalTask.value = project.value.tasks[taskIndex];
+    if (originalTask.value) {
+      // Заполняем форму
+      form.title = originalTask.value.title;
+      form.body = originalTask.value.body;
+      form.timeline = originalTask.value.timeline || '';
+      form.timelinend = originalTask.value.timelinend || '';
+      form.status = originalTask.value.status || 'ожидает';
+      form.progress = originalTask.value.progress || 0;
+
+      // Подзадачи
+      subtasks.value = originalTask.value.subtasks?.map(st => ({ ...st })) || [];
     }
   } catch (err) {
-    error.value = 'Ошибка загрузки';
-    console.error(err);
+    console.error('Ошибка загрузки:', err);
+    error.value = 'Ошибка загрузки данных';
   } finally {
     loading.value = false;
   }
 });
 
-// Статусы задачи
-const isInvalid = computed(() => {
-  const t = task.value;
-  if (!t) return false;
-  let startStr = t.timeline;
-  let endStr = t.timelinend;
-  if (!endStr && startStr && startStr.includes('-')) {
-    const parts = startStr.split('-');
-    startStr = parts[0] || '';
-    endStr = parts[1] || '';
-  }
-  const start = parseDate(startStr || '');
-  const end = parseDate(endStr || '');
-  const startValid = isValidDateFormat(startStr);
-  const endValid = isValidDateFormat(endStr);
-  if ((startStr && !startValid) || (endStr && !endValid)) return true;
-  return !start || !end || start > end;
-});
-
-const isOverdue = computed(() => {
-  const t = task.value;
-  if (!t || isInvalid.value) return false;
-  let endStr = t.timelinend;
-  if (!endStr && t.timeline && t.timeline.includes('-')) {
-    const parts = t.timeline.split('-');
-    endStr = parts[1] || '';
-  }
-  const end = parseDate(endStr || '');
-  if (!end) return false;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  return today > end && t.status !== 'выполнена';
-});
-
-const isUrgent = computed(() => {
-  const t = task.value;
-  if (!t || isInvalid.value || isOverdue.value) return false;
-  let startStr = t.timeline;
-  let endStr = t.timelinend;
-  if (!endStr && startStr && startStr.includes('-')) {
-    const parts = startStr.split('-');
-    startStr = parts[0] || '';
-    endStr = parts[1] || '';
-  }
-  const start = parseDate(startStr || '');
-  const end = parseDate(endStr || '');
-  if (!start || !end) return false;
-  const today = new Date(); today.setHours(0, 0, 0, 0);
-  const totalDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (totalDuration <= 0) return false;
-  const elapsed = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (elapsed < 0) return false;
-  const prog = elapsed / totalDuration;
-  return prog > 2 / 3 && t.status !== 'выполнена';
-});
-
-const barColor = computed(() => {
-  if (isInvalid.value) return '#9e9e9e';
-  if (isOverdue.value) return '#f44336';
-  if (isUrgent.value) return '#ff9800';
-  return '#42b983';
-});
-
-const taskStatusClass = computed(() => {
-  if (isInvalid.value) return 'task-invalid';
-  if (isOverdue.value) return 'task-overdue';
-  if (isUrgent.value) return 'task-urgent';
-  return '';
-});
-
-// --- Методы для задач ---
-const toggleSubtask = async (subtask: SubTask) => {
-  if (!isProjectParticipant.value) {
-    alert('Только участники могут изменять подзадачи');
-    return;
-  }
-  const currentProject = project.value;
-  const currentTask = task.value;
-  if (!currentProject || !currentTask) return;
-  actionInProgress.value = true;
-
-  try {
-    const updatedSubtasks = currentTask.subtasks?.map(st => {
-      if (st.id === subtask.id) return { ...st, completed: !st.completed };
-      return st;
-    }) || [];
-
-    const newCompletedSum = updatedSubtasks
-      .filter(st => st.completed)
-      .reduce((sum, st) => sum + (st.progressPercent || 0), 0);
-
-    if (sliderValue.value > (100 - newCompletedSum)) {
-      sliderValue.value = 100 - newCompletedSum;
-    }
-
-    const newTotal = newCompletedSum + sliderValue.value;
-
-    const updatedTask = {
-      ...currentTask,
-      subtasks: updatedSubtasks,
-      progress: newTotal,
-    };
-
-    const updatedTasks = [...currentProject.tasks];
-    updatedTasks[taskIndex] = updatedTask;
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-
-    project.value.tasks = updatedTasks;
-    task.value = updatedTask;
-    savedProgress.value = newTotal;
-  } catch (err) {
-    console.error('Ошибка при переключении подзадачи:', err);
-    alert('Не удалось обновить подзадачу');
-  } finally {
-    actionInProgress.value = false;
-  }
-};
-
-const completeTask = async () => {
-  if (!isProjectParticipant.value) {
-    alert('Только участники могут завершать задачи');
-    return;
-  }
-  const currentProject = project.value;
-  const currentTask = task.value;
-  if (!currentProject || !currentTask || actionInProgress.value) return;
-  actionInProgress.value = true;
-  try {
-    const updatedTasks = [...currentProject.tasks];
-    updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], status: 'выполнена' } as Task;
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    router.push(`/project/${projectId}`);
-  } catch (err) {
-    console.error('Ошибка при завершении задачи:', err);
-    alert('Не удалось завершить задачу');
-  } finally {
-    actionInProgress.value = false;
-  }
-};
-
-const updateTaskStatus = async (newStatus: string) => {
-  if (!isProjectParticipant.value) {
-    alert('Только участники могут изменять статус');
-    return;
-  }
-  const currentProject = project.value;
-  const currentTask = task.value;
-  if (!currentProject || !currentTask || actionInProgress.value) return;
-  actionInProgress.value = true;
-  try {
-    const updatedTasks = [...currentProject.tasks];
-    updatedTasks[taskIndex] = { ...updatedTasks[taskIndex], status: newStatus } as Task;
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    project.value = { ...currentProject, tasks: updatedTasks };
-    task.value = updatedTasks[taskIndex];
-    showRenewOptions.value = false;
-  } catch (err) {
-    console.error('Ошибка при обновлении статуса задачи:', err);
-    alert('Не удалось изменить статус задачи');
-  } finally {
-    actionInProgress.value = false;
-  }
-};
-
-// --- Функции для работы с комментариями ---
-const addTaskComment = async (content: string) => {
-  if (!isProjectParticipant.value) {
-    alert('Только участники могут комментировать');
-    return;
-  }
-  if (!project.value || !task.value || !authStore.user) return;
-
-  const newComment: Comment = {
+// Добавление подзадачи
+function addSubtask() {
+  subtasks.value.push({
     id: generateId(),
-    authorId: authStore.user.id,
-    content,
-    createdAt: new Date().toISOString(),
-    isRead: false,
-    hidden: false,
+    title: '',
+    description: '',
+    progressPercent: 0,
+    completed: false,
+  });
+}
+
+// Удаление подзадачи
+function removeSubtask(index: number) {
+  subtasks.value.splice(index, 1);
+}
+
+// Сохранение
+async function handleSubmit() {
+  if (!project.value || !originalTask.value) return;
+
+  // Валидация обязательных полей
+  if (!form.title.trim()) {
+    showNotification('Название задачи не может быть пустым', 'info');
+    return;
+  }
+  if (!form.body.trim()) {
+    showNotification('Описание задачи не может быть пустым', 'info');
+    return;
+  }
+
+  // Валидация дат
+  timelineError.value = '';
+  timelinendError.value = '';
+  let valid = true;
+
+  if (!isValidDate(form.timeline || '')) {
+    timelineError.value = 'Неверный формат даты начала';
+    valid = false;
+  }
+  if (!isValidDate(form.timelinend || '')) {
+    timelinendError.value = 'Неверный формат даты окончания';
+    valid = false;
+  }
+
+  if (!valid) return;
+
+  if (form.timeline && form.timelinend) {
+    const start = parseDate(form.timeline);
+    const end = parseDate(form.timelinend);
+    if (start && end && start > end) {
+      showNotification('Дата начала не может быть позже даты окончания', 'info');
+      return;
+    }
+  }
+
+  if (totalSubtasksPercent.value > 100) {
+    showNotification(`Сумма процентов подзадач (${totalSubtasksPercent.value}%) не может превышать 100%`, 'error');
+    return;
+  }
+
+  saving.value = true;
+
+  // Собираем обновлённую задачу
+  const updatedTask: Task = {
+    title: form.title,
+    body: form.body,
+    timeline: form.timeline || undefined,
+    timelinend: form.timelinend || undefined,
+    status: form.status,
+    subtasks: subtasks.value,
+    progress: totalSubtasksPercent.value, // или можно оставить как есть, но лучше пересчитать
   };
 
-  try {
-    const response = await axios.post(
-      `${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments`,
-      newComment
-    );
-    project.value = response.data;
-    task.value = project.value.tasks[taskIndex];
-    showTaskComments.value = true; // открываем блок комментариев
-  } catch (error) {
-    console.error('Failed to add comment:', error);
-    alert('Ошибка при добавлении комментария');
-  }
-};
-
-const markTaskCommentAsRead = async (commentId: string) => {
-  if (!task.value || !isProjectParticipant.value) return;
-  const updatedComments = (task.value.comments || []).map(c =>
-    c.id === commentId ? { ...c, isRead: true } : c
-  );
-  const updatedTask = { ...task.value, comments: updatedComments };
+  // Копируем массив задач
   const updatedTasks = [...project.value.tasks];
   updatedTasks[taskIndex] = updatedTask;
 
   try {
     await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-    task.value = updatedTask;
-    project.value.tasks = updatedTasks;
-  } catch (error) {
-    console.error('Failed to mark comment as read:', error);
-  }
-};
-
-const hideTaskComment = async (commentId: string) => {
-  if (!project.value) return;
-  try {
-    const response = await axios.delete(
-      `${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments/${commentId}`
-    );
-    project.value = response.data;
-    task.value = project.value.tasks[taskIndex];
-  } catch (error) {
-    console.error('Failed to hide comment:', error);
-    alert('Ошибка при скрытии комментария');
-  }
-};
-
-// Диалог подтверждения изменения дополнительного прогресса
-const openConfirmDialog = () => {
-  oldSliderValue.value = sliderValue.value;
-  showConfirmDialog.value = true;
-};
-
-const closeConfirmDialog = () => {
-  showConfirmDialog.value = false;
-};
-
-const confirmExtraChange = async () => {
-  if (!isProjectParticipant.value) {
-    alert('Только участники могут изменять прогресс');
-    closeConfirmDialog();
-    return;
-  }
-  const currentProject = project.value;
-  const currentTask = task.value;
-  if (!currentProject || !currentTask) {
-    closeConfirmDialog();
-    return;
-  }
-
-  const newTotal = completedSubtasksPercent.value + sliderValue.value;
-
-  actionInProgress.value = true;
-  try {
-    const updatedTasks = [...currentProject.tasks];
-    updatedTasks[taskIndex] = {
-      ...updatedTasks[taskIndex],
-      progress: newTotal,
-    } as Task;
-    await projectsStore.updateProject(projectId, { tasks: updatedTasks });
-
-    project.value.tasks = updatedTasks;
-    task.value = updatedTasks[taskIndex];
-    savedProgress.value = newTotal;
-  } catch (err) {
-    console.error('Ошибка при обновлении прогресса:', err);
-    alert('Не удалось изменить прогресс');
-    sliderValue.value = savedProgress.value - completedSubtasksPercent.value;
+    showNotification('Задача успешно сохранена', 'success');
+    setTimeout(() => {
+      router.push(`/project/${projectId}/task/${taskIndex}`);
+    }, 1000);
+  } catch (err: any) {
+    console.error('Ошибка сохранения задачи:', err);
+    if (err.response?.status === 403) {
+      showNotification('У вас недостаточно прав для редактирования задачи', 'error');
+    } else {
+      showNotification('Не удалось сохранить задачу', 'error');
+    }
   } finally {
-    actionInProgress.value = false;
-    showConfirmDialog.value = false;
+    saving.value = false;
   }
-};
+}
 
 // Навигация
-const goBack = () => router.push(`/project/${projectId}`);
+const goBack = () => router.push(`/project/${projectId}/task/${taskIndex}`);
 const goHome = () => router.push('/main');
-
 </script>
 
 <style scoped>
+/* Копируем стили из ProjectEdit.vue и адаптируем */
 .task-edit-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -631,7 +481,7 @@ const goHome = () => router.push('/main');
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 600px;
+  max-width: 800px;
   margin: 0 auto 20px;
 }
 
@@ -647,15 +497,15 @@ const goHome = () => router.push('/main');
   align-items: center;
 }
 
-.home-button {
+.home-button, .back-button {
   background: none;
   border: none;
   font-size: 2rem;
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 50%;
-  width: 44px;
-  height: 44px;
+  width: 50px;
+  height: 50px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -663,11 +513,12 @@ const goHome = () => router.push('/main');
   color: var(--text-primary);
 }
 
-.home-button:hover {
+.home-button:hover, .back-button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
 
-.light-theme .home-button:hover {
+.light-theme .home-button:hover,
+.light-theme .back-button:hover {
   background: rgba(0, 0, 0, 0.05);
 }
 
@@ -676,9 +527,21 @@ const goHome = () => router.push('/main');
   border-radius: 32px;
   box-shadow: var(--shadow-strong);
   padding: 40px;
-  max-width: 600px;
+  max-width: 800px;
   margin: 0 auto;
   transition: background 0.3s;
+}
+
+.form-section {
+  margin-bottom: 40px;
+  padding-bottom: 20px;
+  border-bottom: 2px dashed var(--border-color);
+}
+
+.form-section h2 {
+  color: var(--heading-color);
+  margin-bottom: 20px;
+  font-weight: 500;
 }
 
 .form-group {
@@ -708,22 +571,17 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   border-color: var(--accent-color);
-  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
+  box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
 }
 
-.light-theme input:focus,
-.light-theme select:focus,
-.light-theme textarea:focus {
-  box-shadow: 0 0 0 3px rgba(66, 185, 131, 0.2);
+.dark-theme input:focus,
+.dark-theme select:focus,
+.dark-theme textarea:focus {
+  box-shadow: 0 0 0 3px rgba(1, 69, 172, 0.2);
 }
 
 input.invalid {
   border-color: var(--danger-color);
-}
-
-input.invalid:focus {
-  border-color: var(--danger-color);
-  box-shadow: 0 0 0 3px rgba(244, 67, 54, 0.2);
 }
 
 .error-message {
@@ -743,18 +601,51 @@ textarea {
   gap: 20px;
 }
 
-/* Стили для подзадач */
-.form-section {
-  margin-top: 30px;
-  padding-top: 20px;
-  border-top: 2px dashed var(--border-color);
+/* Статус */
+.status-selector {
+  background: var(--bg-page);
+  padding: 20px;
+  border-radius: 12px;
 }
 
+.status-buttons {
+  display: flex;
+  gap: 15px;
+  margin-top: 15px;
+  flex-wrap: wrap;
+}
+
+.status-btn {
+  flex: 1;
+  min-width: 120px;
+  padding: 12px 20px;
+  border: 2px solid var(--border-color);
+  border-radius: 30px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.status-btn.active {
+  border-color: var(--accent-color);
+  background: rgba(66, 185, 131, 0.1);
+  color: var(--accent-color);
+}
+
+.status-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Подзадачи */
 .subtasks-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 20px;
 }
 
 .add-subtask-button {
@@ -762,44 +653,50 @@ textarea {
   color: var(--button-text);
   border: none;
   border-radius: 30px;
-  padding: 6px 12px;
+  padding: 8px 16px;
   font-size: 0.9rem;
+  font-weight: 600;
   cursor: pointer;
+  transition: background 0.2s;
+}
+
+.add-subtask-button:hover {
+  background: var(--accent-hover);
 }
 
 .no-subtasks {
   text-align: center;
   color: var(--text-secondary);
   font-style: italic;
-  padding: 1rem;
+  padding: 30px;
   border: 1px dashed var(--border-color);
-  border-radius: 8px;
+  border-radius: 12px;
 }
 
 .subtasks-list {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
+  gap: 20px;
 }
 
 .subtask-item {
   border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
+  border-radius: 12px;
+  padding: 16px;
   background: var(--bg-card);
 }
 
 .subtask-header {
   display: flex;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
+  gap: 10px;
+  margin-bottom: 10px;
 }
 
 .subtask-title-input {
   flex: 1;
-  padding: 0.5rem;
+  padding: 8px 12px;
   border: 1px solid var(--input-border);
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--input-bg);
   color: var(--text-primary);
 }
@@ -810,32 +707,33 @@ textarea {
   color: var(--danger-color);
   font-size: 1.2rem;
   cursor: pointer;
-  padding: 0 0.5rem;
+  padding: 0 8px;
 }
 
 .subtask-description {
   width: 100%;
-  padding: 0.5rem;
+  padding: 8px 12px;
   border: 1px solid var(--input-border);
-  border-radius: 4px;
+  border-radius: 8px;
   background: var(--input-bg);
   color: var(--text-primary);
-  margin-bottom: 0.5rem;
+  margin-bottom: 10px;
   resize: vertical;
 }
 
 .subtask-percent {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 10px;
   flex-wrap: wrap;
+  margin-bottom: 10px;
 }
 
 .subtask-percent input {
-  width: 70px;
-  padding: 0.3rem;
+  width: 80px;
+  padding: 6px;
   border: 1px solid var(--input-border);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--input-bg);
   color: var(--text-primary);
 }
@@ -845,10 +743,27 @@ textarea {
   color: var(--text-secondary);
 }
 
-.button-group {
+.subtask-completed {
+  margin-top: 8px;
+}
+
+.subtask-completed label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.subtask-completed input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent-color);
+}
+
+.form-actions {
   display: flex;
   gap: 12px;
-  margin-top: 32px;
+  margin-top: 40px;
 }
 
 .save-button, .cancel-button {
@@ -856,7 +771,7 @@ textarea {
   padding: 14px;
   border: none;
   border-radius: 50px;
-  font-size: 1rem;
+  font-size: 1.1rem;
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s;
@@ -891,5 +806,69 @@ textarea {
   color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
+}
+
+/* Уведомления */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  box-shadow: var(--shadow-strong);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 400px;
+  backdrop-filter: blur(4px);
+}
+
+.notification.error {
+  background-color: rgba(244, 67, 54, 0.9);
+  border-left: 4px solid #d32f2f;
+}
+
+.notification.success {
+  background-color: rgba(76, 175, 80, 0.9);
+  border-left: 4px solid #388e3c;
+}
+
+.notification.info {
+  background-color: rgba(33, 150, 243, 0.9);
+  border-left: 4px solid #1976d2;
+}
+
+.notification-message {
+  flex: 1;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style>

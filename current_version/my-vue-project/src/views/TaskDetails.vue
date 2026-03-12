@@ -4,6 +4,7 @@
       <h1>Детали задачи</h1>
       <div class="header-actions">
         <ThemeToggle />
+        <!-- Кнопка редактирования для заказчика, исполнителя и куратора -->
         <router-link v-if="canEditTask" :to="`/project/${projectId}/task/${taskIndex}/edit`">
           <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
@@ -122,8 +123,9 @@
         <button class="apply-progress-button" @click="openConfirmDialog">Применить дополнительный прогресс</button>
       </section>
 
-      <!-- Кнопки действий (только для участников) -->
+      <!-- Кнопки действий -->
       <section class="action-buttons" v-if="isProjectParticipant">
+        <!-- Задача не выполнена – показываем кнопку завершения для всех участников -->
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask"
                   :disabled="actionInProgress || totalProgress < 100"
@@ -131,15 +133,20 @@
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
           </button>
         </div>
+
+        <!-- Задача выполнена – показываем возможность возобновить только редакторам -->
         <div v-else>
-          <button v-if="!showRenewOptions" class="renew-button" @click="showRenewOptions = true" :disabled="actionInProgress">
-            🔄 Возобновить
-          </button>
-          <div v-else class="renew-options">
-            <button class="status-option work" @click="updateTaskStatus('в работе')" :disabled="actionInProgress">В работе</button>
-            <button class="status-option waiting" @click="updateTaskStatus('ожидает')" :disabled="actionInProgress">Ожидает</button>
-            <button class="status-option cancel" @click="showRenewOptions = false">Отмена</button>
-          </div>
+          <template v-if="canEditTask">
+            <button v-if="!showRenewOptions" class="renew-button" @click="showRenewOptions = true" :disabled="actionInProgress">
+              🔄 Возобновить
+            </button>
+            <div v-else class="renew-options">
+              <button class="status-option work" @click="updateTaskStatus('в работе')" :disabled="actionInProgress">В работе</button>
+              <button class="status-option waiting" @click="updateTaskStatus('ожидает')" :disabled="actionInProgress">Ожидает</button>
+              <button class="status-option cancel" @click="showRenewOptions = false">Отмена</button>
+            </div>
+          </template>
+          <span v-else class="task-completed-info">Задача выполнена</span>
         </div>
       </section>
 
@@ -155,7 +162,7 @@
     <div v-if="showConfirmDialog" class="modal-overlay" @click.self="closeConfirmDialog">
       <div class="modal-content">
         <h3>Подтверждение</h3>
-        <p>Изменить дополнительный прогресс с {{ oldSliderValue }}% на {{ sliderValue }}%?</p>
+        <p>Изменить дополнительный прогресс на {{ sliderValue }}%?</p>
         <div class="modal-actions">
           <button class="modal-confirm" @click="confirmExtraChange">Да</button>
           <button class="modal-cancel" @click="closeConfirmDialog">Нет</button>
@@ -213,8 +220,12 @@ const userRole = computed<ProjectRole | null>(() => {
 // Является ли пользователь участником проекта
 const isProjectParticipant = computed(() => !!userRole.value);
 
-// Может ли редактировать задачу (только заказчик)
-const canEditTask = computed(() => userRole.value === 'customer');
+// Может ли редактировать задачу (заказчик, исполнитель или куратор)
+const canEditTask = computed(() => 
+  userRole.value === 'customer' || 
+  userRole.value === 'executor' || 
+  userRole.value === 'curator'
+);
 
 // Может ли скрывать комментарии (научный руководитель)
 const canHideComments = computed(() => userRole.value === 'supervisor');
@@ -464,9 +475,7 @@ const addTaskComment = async (content: string) => {
 const markTaskCommentAsRead = async (commentId: string) => {
   if (!task.value || !isProjectParticipant.value) return;
   try {
-    // Используем отдельный эндпоинт для отметки прочитанного
     await axios.put(`${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments/${commentId}/read`);
-    // Обновляем локально
     if (task.value.comments) {
       const updatedComments = task.value.comments.map(c => c.id === commentId ? { ...c, isRead: true } : c);
       const updatedTask = { ...task.value, comments: updatedComments };
@@ -522,7 +531,6 @@ const confirmExtraChange = async () => {
 const goBack = () => router.push(`/project/${projectId}`);
 const goHome = () => router.push('/main');
 </script>
-
 
 <style scoped>
 /* ---------- Общие стили ---------- */
@@ -1071,6 +1079,15 @@ const goHome = () => router.push('/main');
 .status-option:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.task-completed-info {
+  display: inline-block;
+  padding: 8px 16px;
+  background: var(--completed-bg);
+  color: var(--text-secondary);
+  border-radius: 20px;
+  font-size: 0.95rem;
 }
 
 /* ---------- Бейджики состояния ---------- */
