@@ -1,5 +1,13 @@
 <template>
   <div class="task-details-page">
+    <!-- Уведомление -->
+    <Transition name="fade">
+      <div v-if="notification.show" class="notification" :class="notification.type">
+        <span class="notification-message">{{ notification.message }}</span>
+        <button class="notification-close" @click="closeNotification">✕</button>
+      </div>
+    </Transition>
+
     <header class="details-header">
       <h1>Детали задачи</h1>
       <div class="header-actions">
@@ -100,7 +108,7 @@
           <div v-for="subtask in subtasks" :key="subtask.id" class="subtask-item" :class="{ completed: subtask.completed }">
             <div class="subtask-info">
               <input type="checkbox" :checked="subtask.completed" @change="toggleSubtask(subtask)"
-                     :disabled="actionInProgress || !isProjectParticipant" />
+                     :disabled="actionInProgress || !canEditTask" />
               <span class="subtask-title">{{ subtask.title }}</span>
               <span class="subtask-percent">{{ subtask.progressPercent }}%</span>
             </div>
@@ -112,8 +120,8 @@
         </div>
       </section>
 
-      <!-- Ползунок дополнительного прогресса (только для участников, если задача в работе) -->
-      <section v-if="showManualProgress && isProjectParticipant" class="progress-section">
+      <!-- Ползунок дополнительного прогресса (только для редакторов, если задача в работе) -->
+      <section v-if="showManualProgress && canEditTask" class="progress-section">
         <h3>Дополнительный прогресс (вне подзадач)</h3>
         <div class="progress-slider-container">
           <span class="progress-value">{{ sliderValue }}%</span>
@@ -122,14 +130,18 @@
         </div>
         <button class="apply-progress-button" @click="openConfirmDialog">Применить дополнительный прогресс</button>
       </section>
+      <div v-else-if="showManualProgress && !canEditTask" class="progress-section-disabled">
+        <p class="disabled-message">🔒 Только заказчик, исполнитель или куратор могут изменять прогресс</p>
+      </div>
 
       <!-- Кнопки действий -->
       <section class="action-buttons" v-if="isProjectParticipant">
-        <!-- Задача не выполнена – показываем кнопку завершения для всех участников -->
+        <!-- Задача не выполнена – показываем кнопку завершения для всех участников,
+             но если не редактор, кнопка не активна и при клике покажет уведомление -->
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask"
-                  :disabled="actionInProgress || totalProgress < 100"
-                  :title="totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : ''">
+                  :disabled="actionInProgress || totalProgress < 100 || !canEditTask"
+                  :title="!canEditTask ? 'Только редакторы могут завершать задачу' : (totalProgress < 100 ? 'Завершить задачу можно только при 100% прогрессе' : '')">
             {{ actionInProgress ? 'Завершение...' : '✓ Завершить задачу' }}
           </button>
         </div>
@@ -209,6 +221,35 @@ const oldSliderValue = ref(0);
 const showConfirmDialog = ref(false);
 
 const extraProgress = computed(() => sliderValue.value);
+
+// Уведомления
+const notification = ref({
+  show: false,
+  message: '',
+  type: 'error' as 'error' | 'info' | 'success'
+});
+
+let notificationTimeout: number | null = null;
+
+function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+  notification.value = { show: true, message, type };
+  notificationTimeout = window.setTimeout(() => {
+    notification.value.show = false;
+    notificationTimeout = null;
+  }, duration);
+}
+
+function closeNotification() {
+  notification.value.show = false;
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+}
 
 // Роль текущего пользователя в проекте
 const userRole = computed<ProjectRole | null>(() => {
@@ -379,7 +420,10 @@ const taskStatusClass = computed(() => {
 
 // --- Методы для задач ---
 const toggleSubtask = async (subtask: SubTask) => {
-  if (!isProjectParticipant.value) { alert('Только участники могут изменять подзадачи'); return; }
+  if (!canEditTask.value) { 
+    showNotification('Только заказчик, исполнитель или куратор могут изменять подзадачи', 'info'); 
+    return; 
+  }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask) return;
@@ -407,12 +451,15 @@ const toggleSubtask = async (subtask: SubTask) => {
     savedProgress.value = newTotal;
   } catch (err) {
     console.error('Ошибка при переключении подзадачи:', err);
-    alert('Не удалось обновить подзадачу');
+    showNotification('Не удалось обновить подзадачу', 'error');
   } finally { actionInProgress.value = false; }
 };
 
 const completeTask = async () => {
-  if (!isProjectParticipant.value) { alert('Только участники могут завершать задачи'); return; }
+  if (!canEditTask.value) { 
+    showNotification('Только заказчик, исполнитель или куратор могут завершать задачи', 'info'); 
+    return; 
+  }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask || actionInProgress.value) return;
@@ -424,12 +471,15 @@ const completeTask = async () => {
     router.push(`/project/${projectId}`);
   } catch (err) {
     console.error('Ошибка при завершении задачи:', err);
-    alert('Не удалось завершить задачу');
+    showNotification('Не удалось завершить задачу', 'error');
   } finally { actionInProgress.value = false; }
 };
 
 const updateTaskStatus = async (newStatus: string) => {
-  if (!isProjectParticipant.value) { alert('Только участники могут изменять статус'); return; }
+  if (!canEditTask.value) { 
+    showNotification('Только заказчик, исполнитель или куратор могут изменять статус', 'info'); 
+    return; 
+  }
   const currentProject = project.value;
   const currentTask = task.value;
   if (!currentProject || !currentTask || actionInProgress.value) return;
@@ -443,13 +493,16 @@ const updateTaskStatus = async (newStatus: string) => {
     showRenewOptions.value = false;
   } catch (err) {
     console.error('Ошибка при обновлении статуса задачи:', err);
-    alert('Не удалось изменить статус задачи');
+    showNotification('Не удалось изменить статус задачи', 'error');
   } finally { actionInProgress.value = false; }
 };
 
 // --- Функции для работы с комментариями ---
 const addTaskComment = async (content: string) => {
-  if (!isProjectParticipant.value) { alert('Только участники могут комментировать'); return; }
+  if (!isProjectParticipant.value) { 
+    showNotification('Только участники могут комментировать', 'info'); 
+    return; 
+  }
   if (!project.value || !task.value || !authStore.user) return;
 
   const newComment: Comment = {
@@ -468,7 +521,7 @@ const addTaskComment = async (content: string) => {
     showTaskComments.value = true;
   } catch (error) {
     console.error('Failed to add comment:', error);
-    alert('Ошибка при добавлении комментария');
+    showNotification('Ошибка при добавлении комментария', 'error');
   }
 };
 
@@ -486,7 +539,7 @@ const markTaskCommentAsRead = async (commentId: string) => {
     }
   } catch (error) {
     console.error('Failed to mark comment as read:', error);
-    alert('Ошибка при отметке комментария');
+    showNotification('Ошибка при отметке комментария', 'error');
   }
 };
 
@@ -498,18 +551,32 @@ const hideTaskComment = async (commentId: string) => {
     task.value = project.value.tasks[taskIndex];
   } catch (error) {
     console.error('Failed to hide comment:', error);
-    alert('Ошибка при скрытии комментария');
+    showNotification('Ошибка при скрытии комментария', 'error');
   }
 };
 
 // Диалог подтверждения изменения дополнительного прогресса
-const openConfirmDialog = () => { oldSliderValue.value = sliderValue.value; showConfirmDialog.value = true; };
-const closeConfirmDialog = () => { showConfirmDialog.value = false; };
+const openConfirmDialog = () => { 
+  oldSliderValue.value = sliderValue.value; 
+  showConfirmDialog.value = true; 
+};
+
+const closeConfirmDialog = () => { 
+  showConfirmDialog.value = false; 
+};
+
 const confirmExtraChange = async () => {
-  if (!isProjectParticipant.value) { alert('Только участники могут изменять прогресс'); closeConfirmDialog(); return; }
+  if (!canEditTask.value) { 
+    showNotification('Только заказчик, исполнитель или куратор могут изменять прогресс', 'info'); 
+    closeConfirmDialog(); 
+    return; 
+  }
   const currentProject = project.value;
   const currentTask = task.value;
-  if (!currentProject || !currentTask) { closeConfirmDialog(); return; }
+  if (!currentProject || !currentTask) { 
+    closeConfirmDialog(); 
+    return; 
+  }
 
   const newTotal = completedSubtasksPercent.value + sliderValue.value;
   actionInProgress.value = true;
@@ -522,9 +589,12 @@ const confirmExtraChange = async () => {
     savedProgress.value = newTotal;
   } catch (err) {
     console.error('Ошибка при обновлении прогресса:', err);
-    alert('Не удалось изменить прогресс');
+    showNotification('Не удалось изменить прогресс', 'error');
     sliderValue.value = savedProgress.value - completedSubtasksPercent.value;
-  } finally { actionInProgress.value = false; showConfirmDialog.value = false; }
+  } finally { 
+    actionInProgress.value = false; 
+    showConfirmDialog.value = false; 
+  }
 };
 
 // Навигация
@@ -1000,6 +1070,20 @@ const goHome = () => router.push('/main');
   transform: scale(1.02);
 }
 
+.progress-section-disabled {
+  margin-top: 30px;
+  padding: 15px;
+  background: var(--bg-card);
+  border-radius: 12px;
+  text-align: center;
+  border: 1px dashed var(--border-color);
+}
+
+.disabled-message {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
 /* ---------- Кнопки действий ---------- */
 .action-buttons {
   margin-top: 30px;
@@ -1117,6 +1201,70 @@ const goHome = () => router.push('/main');
 
 .badge.invalid {
   background-color: #9e9e9e;
+}
+
+/* ---------- Уведомления ---------- */
+.notification {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  padding: 16px 24px;
+  border-radius: 8px;
+  color: white;
+  font-weight: 500;
+  box-shadow: var(--shadow-strong);
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 300px;
+  max-width: 400px;
+  backdrop-filter: blur(4px);
+}
+
+.notification.error {
+  background-color: rgba(244, 67, 54, 0.9);
+  border-left: 4px solid #d32f2f;
+}
+
+.notification.success {
+  background-color: rgba(76, 175, 80, 0.9);
+  border-left: 4px solid #388e3c;
+}
+
+.notification.info {
+  background-color: rgba(33, 150, 243, 0.9);
+  border-left: 4px solid #1976d2;
+}
+
+.notification-message {
+  flex: 1;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 4px;
+  line-height: 1;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.notification-close:hover {
+  opacity: 1;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
 /* ---------- Состояния загрузки ---------- */
