@@ -1077,17 +1077,24 @@ async def hide_comment(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    """
+    Скрыть комментарий (только для научного руководителя, администратора или куратора).
+    """
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    # Админ и куратор могут скрывать комментарии
+
+    # Проверяем права: научный руководитель, админ или куратор
     if not (current_user.is_admin or is_curator(current_user)):
         role = get_participant_role(project, current_user.id)
-        if role != ProjectRole.SUPERVISOR.value:
+        if role != ProjectRole.SUPERVISOR.value or role != ProjectRole.EXECUTOR.value:
             raise HTTPException(status_code=403, detail="Only supervisor, curator or admin can hide comments")
+
+    # Ищем комментарий
     comment = next((c for c in (project.comments or []) if c.get("id") == comment_id), None)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")
+
     comment["hidden"] = True
     flag_modified(project, "comments")
     db.commit()

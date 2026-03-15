@@ -2,7 +2,7 @@
   <div class="comments-section">
     <div class="comments-header">
       <h3>Комментарии</h3>
-      <button v-if="canComment" class="add-comment-button" @click="showAddComment = true">
+      <button v-if="canComment && onAddComment" class="add-comment-button" @click="showAddComment = true">
         + Добавить комментарий
       </button>
     </div>
@@ -47,7 +47,7 @@
 
             <!-- Кнопка скрытия для всех, у кого есть права (автор, заказчик, админ, куратор) -->
             <button
-              v-if="canHide(comment) && !comment.hidden"
+              v-if="canHide(comment) && !comment.hidden && onHideComment"
               class="delete-comment-btn"
               @click="confirmHideComment(comment)"
               title="Скрыть комментарий"
@@ -57,7 +57,7 @@
 
             <!-- Кнопка окончательного удаления для скрытых комментариев (только админ/куратор) -->
             <button
-              v-if="comment.hidden && (isAdmin || isCurator)"
+              v-if="comment.hidden && (isAdmin || isCurator) && onPermanentDelete"
               class="permanent-delete-btn"
               @click="confirmPermanentDelete(comment)"
               title="Удалить навсегда"
@@ -70,7 +70,7 @@
           {{ comment.content }}
         </div>
         <!-- Кнопка "Отметить как прочитанное" -->
-        <div v-if="!comment.isRead && canComment" class="comment-actions">
+        <div v-if="!comment.isRead && canComment && onMarkAsRead" class="comment-actions">
           <button @click="markAsRead(comment.id)" class="mark-read-btn">Отметить как прочитанное</button>
         </div>
       </div>
@@ -108,7 +108,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
+import { ref, computed } from 'vue';
 import type { Comment } from '@/types';
 import { useUsersStore } from '@/stores/users';
 import { useAuthStore } from '@/stores/auth';
@@ -116,14 +116,14 @@ import { useAuthStore } from '@/stores/auth';
 const props = defineProps<{
   comments: Comment[];
   canComment: boolean;
-  isAuthor: boolean; // true для заказчика
-  canHideComments?: boolean; // true для научрука
-  isAdmin?: boolean; // добавлено
-  isCurator?: boolean; // добавлено
+  isAuthor: boolean;
+  canHideComments?: boolean;
+  isAdmin?: boolean;
+  isCurator?: boolean;
   onAddComment?: (content: string) => Promise<void>;
   onMarkAsRead?: (commentId: string) => Promise<void>;
   onHideComment?: (commentId: string) => Promise<void>;
-  onPermanentDelete?: (commentId: string) => Promise<void>; // новый проп
+  onPermanentDelete?: (commentId: string) => Promise<void>;
 }>();
 
 const usersStore = useUsersStore();
@@ -139,7 +139,6 @@ const commentToDeletePermanently = ref<Comment | null>(null);
 
 const baseUrl = 'http://localhost:8000';
 
-// Фильтруем скрытые комментарии: куратор видит все, остальные – только не скрытые
 const filteredComments = computed(() => {
   const result = props.isAdmin || props.isCurator
     ? props.comments
@@ -147,16 +146,13 @@ const filteredComments = computed(() => {
   return result;
 });
 
-// Сортировка по дате (новые сверху)
 const sortedComments = computed(() => {
   return [...filteredComments.value].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
 });
 
-// Проверка, может ли текущий пользователь скрыть данный комментарий
 const canHide = (comment: Comment): boolean => {
-  // Админ и куратор всегда могут скрыть
   if (props.isAdmin || props.isCurator) return true;
   return props.isAuthor || authStore.user?.id === comment.authorId;
 };
@@ -204,9 +200,14 @@ const handleAuthorImageError = (id: number) => {
 
 const saveComment = async () => {
   if (!newComment.value.trim() || !props.onAddComment) return;
-  await props.onAddComment(newComment.value);
-  newComment.value = '';
-  showAddComment.value = false;
+  try {
+    await props.onAddComment(newComment.value);
+    newComment.value = '';
+    showAddComment.value = false;
+  } catch (error) {
+    console.error('Error saving comment:', error);
+    alert('Не удалось отправить комментарий');
+  }
 };
 
 const cancelAddComment = () => {
@@ -216,7 +217,11 @@ const cancelAddComment = () => {
 
 const markAsRead = async (commentId: string) => {
   if (props.onMarkAsRead) {
-    await props.onMarkAsRead(commentId);
+    try {
+      await props.onMarkAsRead(commentId);
+    } catch (error) {
+      console.error('Error marking comment as read:', error);
+    }
   }
 };
 
@@ -265,27 +270,6 @@ const permanentDeleteComment = async () => {
 };
 </script>
 
-<style scoped>
-/* Стили остаются без изменений, добавляем новый класс для кнопки удаления */
-.permanent-delete-btn {
-  background: transparent;
-  border: none;
-  cursor: pointer;
-  padding: 6px;
-  border-radius: 50%;
-  transition: all 0.2s;
-  opacity: 0.6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--danger-color);
-}
-.permanent-delete-btn:hover {
-  opacity: 1;
-  background: rgba(244, 67, 54, 0.2);
-}
-/* Остальные стили из исходного файла CommentsSection.vue */
-</style>
 <style scoped>
 .comments-section {
   margin-top: 30px;
@@ -548,7 +532,7 @@ const permanentDeleteComment = async () => {
   font-style: italic;
 }
 
-/* Модальное окно подтверждения скрытия (обновлённое) */
+/* Модальное окно подтверждения скрытия */
 .hide-modal-overlay {
   position: fixed;
   top: 0;
@@ -581,7 +565,6 @@ const permanentDeleteComment = async () => {
 .hide-modal-icon {
   font-size: 4rem;
   margin-bottom: 20px;
-  /* анимация shake удалена */
 }
 
 .hide-modal-content h3 {
@@ -657,7 +640,24 @@ const permanentDeleteComment = async () => {
   box-shadow: 0 6px 15px rgba(55, 65, 81, 0.4);
 }
 
-/* Анимации (оставлены только fadeIn и slideUp) */
+.permanent-delete-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger-color);
+}
+.permanent-delete-btn:hover {
+  opacity: 1;
+  background: rgba(244, 67, 54, 0.2);
+}
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }

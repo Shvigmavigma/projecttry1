@@ -14,7 +14,7 @@
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="project">
       <!-- Макет для НЕ-участников -->
-      <div v-if="!userRole" class="non-author-layout">
+      <div v-if="!userRole && !isAdmin && !isCurator" class="non-author-layout">
         <div class="project-card">
           <div class="project-section">
             <h3>Описание</h3>
@@ -52,7 +52,7 @@
         </div>
       </div>
 
-      <!-- Макет для УЧАСТНИКОВ -->
+      <!-- Макет для УЧАСТНИКОВ, АДМИНИСТРАТОРОВ И КУРАТОРОВ -->
       <div v-else class="author-layout">
         <h1 class="project-title-center">{{ project.title }}</h1>
 
@@ -201,14 +201,11 @@
               </div>
             </div>
 
-            <!-- Кнопки управления проектом для разных ролей -->
-            <div class="project-actions" v-if="canEdit">
+            <!-- Кнопки управления проектом (единый блок) -->
+            <div class="project-actions" v-if="hasManagementRights">
               <button class="edit-project-button" @click="goToEdit">✎ Редактировать проект</button>
               <button class="delete-project-button" @click="deleteProject">🗑 Удалить проект</button>
-            </div>
-            <div v-if="userRole === 'executor' || userRole === 'curator' || authStore.user?.is_admin || isCurator" class="project-actions">
-              <button v-if="userRole === 'executor'" class="edit-project-button" @click="goToEdit">✎ Редактировать проект</button>
-              <button class="delete-project-button" @click="hideProject">🗑 Скрыть проект</button>
+              <button v-if="canHide" class="delete-project-button" @click="hideProject">🗑 Скрыть проект</button>
             </div>
           </div>
 
@@ -221,7 +218,7 @@
             <div class="task-header-buttons">
               <!-- Кнопка показа предложений -->
               <button 
-                v-if="userRole || authStore.user?.is_admin || isCurator" 
+                v-if="hasFullAccess" 
                 class="suggestions-btn" 
                 @click="showSuggestions = !showSuggestions"
               >
@@ -260,9 +257,9 @@
                 </span>
               </button>
 
-              <!-- Кнопка: Запросы на вступление (только для заказчика, куратора и администратора) -->
+              <!-- Кнопка: Запросы на вступление (для заказчика, куратора, администратора) -->
               <button 
-                v-if="userRole === 'customer' || userRole === 'curator' || authStore.user?.is_admin || isCurator" 
+                v-if="canManageJoinRequests" 
                 class="requests-btn" 
                 @click="showJoinRequests = !showJoinRequests"
               >
@@ -281,7 +278,7 @@
               <SuggestionsSection
                 :project-id="project.id"
                 :suggestions="suggestions"
-                :is-project-participant="!!userRole || authStore.user?.is_admin || isCurator"
+                :is-project-participant="hasFullAccess"
                 :can-edit="canEdit"
                 :can-hide-comments="canHideComments"
                 :on-accept="acceptSuggestion"
@@ -297,10 +294,10 @@
             <div v-if="showProjectComments" class="comments-container">
               <CommentsSection
                 :comments="project.comments || []"
-                :can-comment="!!userRole || authStore.user?.is_admin || isCurator"
+                :can-comment="hasFullAccess"
                 :is-author="canEdit"
                 :can-hide-comments="canHideComments"
-                :is-admin="authStore.user?.is_admin"
+                :is-admin="isAdmin"
                 :is-curator="isCurator"
                 :on-add-comment="addProjectComment"
                 :on-mark-as-read="markProjectCommentAsRead"
@@ -374,8 +371,6 @@
                     <span v-if="isTaskOverdue(task)" class="overdue-badge">Просрочено</span>
                     <span v-if="isTaskInvalid(task)" class="invalid-badge">Некорректные даты</span>
                     <span v-if="isTaskNotStarted(task)" class="not-started-badge">Не начато</span>
-
-                    <!-- Отображение исполнителя, если есть -->
                     <span v-if="task.assigned_to" class="assigned-info">
                       Исполнитель: {{ getUserNickname(task.assigned_to) }}
                     </span>
@@ -407,8 +402,6 @@
                     <span v-if="isTaskOverdue(task)" class="overdue-badge">Просрочено</span>
                     <span v-if="isTaskInvalid(task)" class="invalid-badge">Некорректные даты</span>
                     <span v-if="isTaskNotStarted(task)" class="not-started-badge">Не начато</span>
-
-                    <!-- Отображение исполнителя, если есть -->
                     <span v-if="task.assigned_to" class="assigned-info">
                       Исполнитель: {{ getUserNickname(task.assigned_to) }}
                     </span>
@@ -465,7 +458,7 @@ import ThemeToggle from '@/components/ThemeToggle.vue';
 import CommentsSection from '@/components/CommentsSection.vue';
 import SuggestionsSection from '@/components/SuggestionsSection.vue';
 import InviteModal from '@/components/InviteModal.vue';
-import type { Project, User, Task, Comment, ProjectRole, Suggestion, SuggestionComment, JoinRequest } from '@/types';
+import type { Project, User, Task, Comment, ProjectRole, Suggestion, JoinRequest } from '@/types';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -498,54 +491,70 @@ const githubEditValue = ref('');
 const showEditDrive = ref(false);
 const driveEditValue = ref('');
 
-// Роль текущего пользователя в проекте
+// Роль текущего пользователя в проекте (только если он участник)
 const userRole = computed<ProjectRole | null>(() => {
   if (!authStore.userId || !project.value) return null;
   const participant = project.value.participants?.find(p => p.user_id === authStore.userId);
   return participant?.role || null;
 });
 
-// Является ли пользователь куратором (глобально)
-const isCurator = computed(() => {
-  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
-});
+// Глобальные роли
+const isAdmin = computed(() => authStore.user?.is_admin === true);
+const isCurator = computed(() => authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true);
 
-// Права (с учётом админа и куратора)
+// Полный доступ (участник, админ или куратор)
+const hasFullAccess = computed(() => !!userRole.value || isAdmin.value || isCurator.value);
+
+// Права на управление проектом (редактирование, удаление)
 const canEdit = computed(() => 
   userRole.value === 'customer' || 
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
 
+// Право предлагать изменения
 const canSuggest = computed(() => 
   ['expert', 'supervisor', 'executor'].includes(userRole.value) || 
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
 
+// Право скрывать комментарии (научрук, админ, куратор)
 const canHideComments = computed(() => 
   userRole.value === 'supervisor' || 
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
 
+// Право приглашать
 const canInvite = computed(() => 
   userRole.value === 'customer' || 
   userRole.value === 'supervisor' || 
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
-const permanentDeleteComment = async (commentId: string) => {
-  if (!project.value) return;
-  try {
-    await axios.delete(`${baseUrl}/admin/comments/${commentId}`);
-    showNotification('Комментарий удалён навсегда', 'success');
-    await loadProject();
-  } catch (error) {
-    console.error('Failed to delete comment permanently', error);
-    showNotification('Ошибка при удалении комментария', 'error');
-  }
-};
+
+// Право управлять запросами на вступление
+const canManageJoinRequests = computed(() => 
+  userRole.value === 'customer' || 
+  userRole.value === 'curator' || 
+  isAdmin.value || 
+  isCurator.value
+);
+
+// Право скрывать проект (исполнитель, куратор в проекте, админ, куратор)
+const canHide = computed(() => 
+  userRole.value === 'executor' || 
+  userRole.value === 'curator' || 
+  isAdmin.value || 
+  isCurator.value
+);
+
+// Общее право на отображение блока управления проектом
+const hasManagementRights = computed(() => 
+  canEdit.value || canHide.value
+);
+
 // Количество непрочитанных комментариев
 const unreadProjectCommentsCount = computed(() => {
   const comments = project.value?.comments || [];
@@ -617,7 +626,7 @@ async function respondToProject() {
   try {
     await axios.post(`${baseUrl}/projects/${project.value.id}/join-requests`);
     showNotification('Запрос отправлен!', 'success');
-    await loadProject(); // перезагружаем, чтобы увидеть созданный запрос
+    await loadProject();
   } catch (err: any) {
     console.error('Failed to respond to project', err);
     const msg = err.response?.data?.detail || 'Ошибка при отправке запроса';
@@ -632,7 +641,7 @@ async function acceptJoinRequest(requestId: string) {
   try {
     await axios.put(`${baseUrl}/projects/${project.value.id}/join-requests/${requestId}/accept`);
     showNotification('Запрос принят', 'success');
-    await loadProject(); // перезагружаем проект, чтобы увидеть нового участника
+    await loadProject();
   } catch (err) {
     console.error('Failed to accept request', err);
     showNotification('Ошибка при принятии запроса', 'error');
@@ -650,8 +659,6 @@ async function rejectJoinRequest(requestId: string) {
     showNotification('Ошибка при отклонении запроса', 'error');
   }
 }
-
-// --- ОСТАЛЬНЫЕ МЕТОДЫ ---
 
 onMounted(loadProject);
 watch(() => route.params.id, loadProject);
@@ -702,10 +709,7 @@ function saveGithubLink() {
   showGithubInput.value = false;
   githubInput.value = '';
 }
-function cancelGithub() {
-  showGithubInput.value = false;
-  githubInput.value = '';
-}
+function cancelGithub() { showGithubInput.value = false; githubInput.value = ''; }
 function startEditGithub() {
   githubEditValue.value = project.value?.links?.github || '';
   showEditGithub.value = true;
@@ -717,10 +721,7 @@ function saveEditGithub() {
   showEditGithub.value = false;
   githubEditValue.value = '';
 }
-function cancelEditGithub() {
-  showEditGithub.value = false;
-  githubEditValue.value = '';
-}
+function cancelEditGithub() { showEditGithub.value = false; githubEditValue.value = ''; }
 async function deleteGithubLink() {
   if (!project.value?.links?.github) return;
   if (confirm('Удалить ссылку на GitHub?')) {
@@ -736,10 +737,7 @@ function saveDriveLink() {
   showDriveInput.value = false;
   driveInput.value = '';
 }
-function cancelDrive() {
-  showDriveInput.value = false;
-  driveInput.value = '';
-}
+function cancelDrive() { showDriveInput.value = false; driveInput.value = ''; }
 function startEditDrive() {
   driveEditValue.value = project.value?.links?.google_drive || '';
   showEditDrive.value = true;
@@ -751,10 +749,7 @@ function saveEditDrive() {
   showEditDrive.value = false;
   driveEditValue.value = '';
 }
-function cancelEditDrive() {
-  showEditDrive.value = false;
-  driveEditValue.value = '';
-}
+function cancelEditDrive() { showEditDrive.value = false; driveEditValue.value = ''; }
 async function deleteDriveLink() {
   if (!project.value?.links?.google_drive) return;
   if (confirm('Удалить ссылку на Google Диск?')) {
@@ -786,7 +781,7 @@ const addProjectComment = async (content: string) => {
 };
 
 const markProjectCommentAsRead = async (commentId: string) => {
-  if (!project.value || !userRole.value) return;
+  if (!project.value) return;  // убрана проверка userRole
   try {
     await axios.put(`${baseUrl}/projects/${project.value.id}/comments/${commentId}/read`);
     if (project.value.comments) {
@@ -809,6 +804,18 @@ const hideProjectComment = async (commentId: string) => {
   } catch (error) {
     console.error('Failed to hide comment:', error);
     alert('Ошибка при скрытии комментария');
+  }
+};
+
+const permanentDeleteComment = async (commentId: string) => {
+  if (!project.value) return;
+  try {
+    await axios.delete(`${baseUrl}/admin/comments/${commentId}`);
+    showNotification('Комментарий удалён навсегда', 'success');
+    await loadProject();
+  } catch (error) {
+    console.error('Failed to delete comment permanently', error);
+    showNotification('Ошибка при удалении комментария', 'error');
   }
 };
 
@@ -838,30 +845,18 @@ const rejectSuggestion = async (suggestionId: string) => {
 };
 
 const addSuggestionComment = async (suggestionId: string, content: string) => {
-  if (!project.value || !authStore.user) return;
   alert('Функция комментариев к предложениям пока не реализована');
 };
 
-const markSuggestionCommentRead = async (suggestionId: string, commentId: string) => {
-  // TODO
-};
-
-const deleteSuggestionComment = async (suggestionId: string, commentId: string) => {
-  // TODO
-};
-
-const hideSuggestionComment = async (suggestionId: string, commentId: string) => {
-  // TODO
-};
+const markSuggestionCommentRead = async () => {};
+const deleteSuggestionComment = async () => {};
+const hideSuggestionComment = async () => {};
 
 // --- Приглашения ---
 const sendInvite = async (email: string, role: ProjectRole) => {
   if (!project.value) return;
   try {
-    const response = await axios.post(`${baseUrl}/projects/${project.value.id}/invite`, {
-      email,
-      role,
-    });
+    const response = await axios.post(`${baseUrl}/projects/${project.value.id}/invite`, { email, role });
     alert(`Приглашение создано, токен: ${response.data.token}`);
   } catch (error) {
     console.error('Failed to create invite:', error);
@@ -874,20 +869,17 @@ function parseDate(dateStr: string): Date | null {
   if (!dateStr) return null;
   const parts = dateStr.split('.');
   if (parts.length !== 3) return null;
-  const [day, month, year] = parts.map(Number) as [number, number, number];
-  if (isNaN(day) || isNaN(month) || isNaN(year)) return null;
+  const [day, month, year] = parts.map(Number);
   return new Date(year, month - 1, day);
 }
-
 function formatTaskDates(task: Task): string {
   if (task.timelinend) return `${task.timeline || '?'} – ${task.timelinend}`;
   else if (task.timeline && task.timeline.includes('-')) {
     const parts = task.timeline.split('-');
-    if (parts.length === 2) return `${parts[0]} – ${parts[1]}`;
+    return `${parts[0]} – ${parts[1]}`;
   }
   return task.timeline || '?';
 }
-
 function isTaskOverdue(task: Task): boolean {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   let endStr = task.timelinend;
@@ -899,10 +891,8 @@ function isTaskOverdue(task: Task): boolean {
   if (!endDate) return false;
   return today > endDate && task.status !== 'выполнена';
 }
-
 function isTaskInvalid(task: Task): boolean {
-  let startStr = task.timeline;
-  let endStr = task.timelinend;
+  let startStr = task.timeline, endStr = task.timelinend;
   if (!endStr && startStr && startStr.includes('-')) {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
@@ -913,24 +903,18 @@ function isTaskInvalid(task: Task): boolean {
   if (!start || !end) return true;
   return start > end;
 }
-
 function isTaskNotStarted(task: Task): boolean {
   if (isTaskInvalid(task) || isTaskOverdue(task)) return false;
   let startStr = task.timeline;
-  if (!task.timelinend && startStr && startStr.includes('-')) {
-    const parts = startStr.split('-');
-    startStr = parts[0] || '';
-  }
+  if (!task.timelinend && startStr && startStr.includes('-')) startStr = startStr.split('-')[0] || '';
   const start = parseDate(startStr || '');
   if (!start) return false;
   const today = new Date(); today.setHours(0, 0, 0, 0);
   return today < start;
 }
-
 function isTaskUrgent(task: Task): boolean {
   if (isTaskInvalid(task) || isTaskOverdue(task) || isTaskNotStarted(task)) return false;
-  let startStr = task.timeline;
-  let endStr = task.timelinend;
+  let startStr = task.timeline, endStr = task.timelinend;
   if (!endStr && startStr && startStr.includes('-')) {
     const parts = startStr.split('-');
     startStr = parts[0] || '';
@@ -943,11 +927,9 @@ function isTaskUrgent(task: Task): boolean {
   const totalDuration = (end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
   if (totalDuration <= 0) return false;
   const elapsed = (today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24);
-  if (elapsed < 0) return false;
   const progress = elapsed / totalDuration;
   return progress > 2 / 3 && task.status !== 'выполнена';
 }
-
 function taskStatusClass(task: Task): string {
   if (isTaskInvalid(task)) return 'task-invalid';
   if (isTaskOverdue(task)) return 'task-overdue';
@@ -956,25 +938,10 @@ function taskStatusClass(task: Task): string {
   return '';
 }
 
-const activeTasks = computed<Task[]>(() => {
-  if (!project.value || !project.value.tasks) return [];
-  return project.value.tasks.filter(task => task.status !== 'выполнена');
-});
-
-const completedTasks = computed<Task[]>(() => {
-  if (!project.value || !project.value.tasks) return [];
-  return project.value.tasks.filter(task => task.status === 'выполнена');
-});
-
-const inProgressTasks = computed<Task[]>(() => {
-  if (!project.value || !project.value.tasks) return [];
-  return project.value.tasks.filter(task => task.status === 'в работе');
-});
-
-const waitingTasks = computed<Task[]>(() => {
-  if (!project.value || !project.value.tasks) return [];
-  return project.value.tasks.filter(task => task.status === 'ожидает');
-});
+const activeTasks = computed<Task[]>(() => project.value?.tasks?.filter(t => t.status !== 'выполнена') || []);
+const completedTasks = computed<Task[]>(() => project.value?.tasks?.filter(t => t.status === 'выполнена') || []);
+const inProgressTasks = computed<Task[]>(() => project.value?.tasks?.filter(t => t.status === 'в работе') || []);
+const waitingTasks = computed<Task[]>(() => project.value?.tasks?.filter(t => t.status === 'ожидает') || []);
 
 const activeTasksProgress = computed(() => {
   if (!project.value || !activeTasks.value) return [];
@@ -1039,9 +1006,7 @@ const deleteProject = async () => {
 
 const hideProject = async () => {
   if (!project.value) return;
-  if (confirm('Скрыть проект из списка? Вы сможете снова его увидеть, если заказчик или куратор вернёт его.')) {
-    alert('Функция скрытия проекта пока не реализована на сервере.');
-  }
+  alert('Функция скрытия проекта пока не реализована на сервере.');
 };
 
 const goToEdit = () => router.push(`/project/edit/${route.params.id}`);
@@ -1050,7 +1015,6 @@ const goHome = () => router.push('/main');
 const goToUser = (userId: number) => router.push(`/user/${userId}`);
 const openInviteModal = () => { showInviteModal.value = true; };
 
-// Вспомогательная функция для обработки ошибок изображений
 const handleAuthorImageError = (id: number) => {
   if (!avatarError.value) avatarError.value = {};
   avatarError.value[id] = true;
@@ -1058,7 +1022,6 @@ const handleAuthorImageError = (id: number) => {
 
 const avatarError = ref<Record<number, boolean>>({});
 
-// Функция форматирования даты
 function formatDate(dateStr: string) {
   const date = new Date(dateStr);
   const now = new Date();
@@ -1071,42 +1034,20 @@ function formatDate(dateStr: string) {
   if (diffHours < 24) return `${diffHours} ч назад`;
   if (diffDays === 1) return 'вчера';
   if (diffDays < 7) return `${diffDays} дн назад`;
-  return date.toLocaleDateString('ru-RU', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-// --- Уведомления ---
 const notification = ref({ show: false, message: '', type: 'error' as 'error' | 'info' | 'success' });
 let notificationTimeout: number | null = null;
-
 function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
-  if (notificationTimeout) {
-    clearTimeout(notificationTimeout);
-    notificationTimeout = null;
-  }
+  if (notificationTimeout) clearTimeout(notificationTimeout);
   notification.value = { show: true, message, type };
-  notificationTimeout = window.setTimeout(() => {
-    notification.value.show = false;
-    notificationTimeout = null;
-  }, duration);
+  notificationTimeout = window.setTimeout(() => { notification.value.show = false; }, duration);
 }
-
-// watchEffect для отладки (можно удалить после проверки)
-watchEffect(() => {
-  console.log('isStudent:', isStudent.value);
-  console.log('userRole:', userRole.value);
-  console.log('hasExecutors:', hasExecutors.value);
-  console.log('authStore.user:', authStore.user);
-  console.log('project participants:', project.value?.participants);
-});
 </script>
 
 <style scoped>
+/* Стили из исходного файла (оставлены без изменений) */
 .already-responded {
   text-align: center;
   padding: 12px 24px;
@@ -1128,7 +1069,6 @@ watchEffect(() => {
   box-sizing: border-box;
   transition: background 0.3s;
 }
-
 .details-header {
   display: flex;
   justify-content: space-between;
@@ -1172,7 +1112,6 @@ watchEffect(() => {
 .light-theme .home-button:hover {
   background: rgba(0, 0, 0, 0.05);
 }
-
 /* Общие стили */
 .project-section {
   margin-bottom: 28px;
@@ -1209,7 +1148,6 @@ watchEffect(() => {
   border-radius: 12px;
   margin-left: 4px;
 }
-
 /* Макеты */
 .non-author-layout {
   max-width: 800px;
@@ -1245,7 +1183,6 @@ watchEffect(() => {
   box-shadow: var(--shadow);
   transition: background 0.3s;
 }
-
 /* Заголовок и кнопки в правой колонке */
 .tasks-section-title {
   color: var(--heading-color);
@@ -1310,7 +1247,6 @@ watchEffect(() => {
   padding: 0 4px;
   margin-left: 4px;
 }
-
 /* Контейнеры для комментариев и предложений */
 .comments-container,
 .suggestions-container,
@@ -1324,7 +1260,6 @@ watchEffect(() => {
   background: var(--bg-card);
   padding: 15px;
 }
-
 /* Специфично для запросов */
 .requests-header {
   display: flex;
@@ -1399,10 +1334,6 @@ watchEffect(() => {
   color: var(--text-primary);
   margin-bottom: 2px;
 }
-.request-date {
-  font-size: 0.8rem;
-  color: var(--text-secondary);
-}
 .request-actions {
   display: flex;
   gap: 8px;
@@ -1436,7 +1367,6 @@ watchEffect(() => {
   padding: 20px;
   font-style: italic;
 }
-
 /* Кнопка отклика на проект */
 .respond-project-section {
   margin-bottom: 20px;
@@ -1463,7 +1393,6 @@ watchEffect(() => {
   opacity: 0.6;
   cursor: not-allowed;
 }
-
 /* Группы задач */
 .task-group {
   margin-bottom: 30px;
@@ -1611,7 +1540,6 @@ watchEffect(() => {
   font-style: italic;
   padding: 20px;
 }
-
 /* Диаграмма Ганта */
 .gantt-section {
   margin-top: 30px;
@@ -1670,7 +1598,6 @@ watchEffect(() => {
   font-weight: 500;
   background-color: transparent;
 }
-
 /* Выполненные задачи */
 .completed-tasks {
   display: flex;
@@ -1700,7 +1627,6 @@ watchEffect(() => {
   color: var(--text-secondary);
   margin-top: 4px;
 }
-
 /* Кнопки управления проектом (левая колонка) */
 .project-actions {
   margin-top: 30px;
@@ -1741,7 +1667,6 @@ watchEffect(() => {
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
 }
-
 /* Ссылки проекта */
 .project-links {
   margin-bottom: 28px;
@@ -1871,7 +1796,6 @@ watchEffect(() => {
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
 }
-
 .loading,
 .error {
   text-align: center;

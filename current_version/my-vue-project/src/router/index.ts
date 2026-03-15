@@ -1,4 +1,3 @@
-// src/router/index.ts
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router'
 import Login from '../views/Login.vue'
 import Register from '../views/Register.vue'
@@ -17,7 +16,7 @@ import ProfileEdit from '../views/ProfileEdit.vue'
 import UserProjects from '../views/UserProjects.vue'
 import InviteAccept from '@/views/InviteAccept.vue'
 
-// Импорт админских страниц (создадим их позже)
+// Админские страницы
 import AdminPanel from '../views/AdminPanel.vue'
 import AdminUsers from '../views/AdminUsers.vue'
 import AdminUserEdit from '../views/AdminUserEdit.vue'
@@ -25,7 +24,6 @@ import AdminProjects from '../views/AdminProjects.vue'
 import AdminProjectEdit from '../views/AdminProjectEdit.vue'
 
 const routes: Array<RouteRecordRaw> = [
-  // ... существующие маршруты
   { path: '/', redirect: '/login' },
   { path: '/login', name: 'Login', component: Login },
   { path: '/register', name: 'Register', component: Register },
@@ -82,24 +80,20 @@ const router = createRouter({
   routes
 })
 
-// Guard для проверки прав администратора
-router.beforeEach(async (to, from, next) => {
+// Guard для проверки прав администратора (обновлённый синтаксис без next())
+router.beforeEach(async (to, from) => {
   if (to.meta.requiresAdmin) {
-    // Импортируем store здесь, чтобы избежать циклической зависимости
     const { useAuthStore } = await import('@/stores/auth')
     const authStore = useAuthStore()
-    // Убедимся, что пользователь загружен
     if (!authStore.isAuthenticated) {
       await authStore.checkAuth()
     }
     if (!authStore.user?.is_admin) {
-      next('/main')
-    } else {
-      next()
+      return '/main' // перенаправляем на главную
     }
-  } else {
-    next()
   }
+  // Разрешаем переход
+  return true
 })
 
 export default router
