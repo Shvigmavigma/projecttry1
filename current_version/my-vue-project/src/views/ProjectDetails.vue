@@ -1,4 +1,3 @@
-<!-- src/views/ProjectDetails.vue -->
 <template>
   <div class="project-details-page">
     <!-- Шапка -->
@@ -39,6 +38,16 @@
               </span>
             </div>
             <p v-else>Нет участников</p>
+          </div>
+
+          <!-- Кнопка отклика для учеников (не участников) -->
+          <div v-if="isStudent && !hasExecutors" class="respond-project-section">
+            <div v-if="userPendingRequest" class="already-responded">
+              <span class="responded-message">✅ Вы уже откликнулись</span>
+            </div>
+            <button v-else class="respond-project-btn" @click="respondToProject" :disabled="responding">
+              {{ responding ? 'Отправка...' : 'Откликнуться на проект' }}
+            </button>
           </div>
         </div>
       </div>
@@ -250,7 +259,29 @@
                   </span>
                 </span>
               </button>
+
+              <!-- Кнопка: Запросы на вступление (только для заказчика и куратора) -->
+              <button 
+                v-if="userRole === 'customer' || userRole === 'curator'" 
+                class="requests-btn" 
+                @click="showJoinRequests = !showJoinRequests"
+              >
+                <span class="btn-content">
+                  <span class="requests-icon">👥</span>
+                  {{ showJoinRequests ? 'Скрыть' : 'Запросы' }}
+                  <span v-if="pendingJoinRequestsCount > 0" class="header-unread-badge">
+                    {{ pendingJoinRequestsCount }}
+                  </span>
+                </span>
+              </button>
             </div>
+
+            <!-- Кнопка отклика для учеников (не участников) (дублируется, можно оставить для красоты) -->
+            <!-- <div v-if="isStudent && !userRole && !hasExecutors" class="respond-project-section">
+              <button class="respond-project-btn" @click="respondToProject" :disabled="responding">
+                {{ responding ? 'Отправка...' : '👋 Откликнуться на проект' }}
+              </button>
+            </div> -->
 
             <!-- Блок предложений -->
             <div v-if="showSuggestions" class="suggestions-container">
@@ -282,6 +313,48 @@
               />
             </div>
 
+            <!-- Блок запросов на вступление -->
+            <div v-if="showJoinRequests" class="requests-container">
+              <div class="requests-header">
+                <h3>Запросы на вступление</h3>
+                <span v-if="pendingJoinRequestsCount > 0" class="pending-badge">{{ pendingJoinRequestsCount }}</span>
+              </div>
+
+              <div v-if="project.join_requests === undefined" class="loading">Загрузка запросов...</div>
+              <div v-else-if="pendingJoinRequests.length === 0" class="no-requests">
+                Нет новых запросов
+              </div>
+              <div v-else class="requests-list">
+                <div
+                  v-for="request in pendingJoinRequests"
+                  :key="request.id"
+                  class="request-item"
+                >
+                  <div class="request-info">
+                    <div class="request-user">
+                      <div class="user-avatar">
+                        <img
+                          v-if="getUserAvatar(request.user_id)"
+                          :src="getUserAvatar(request.user_id)"
+                          :alt="getUserNickname(request.user_id)"
+                          @error="handleAuthorImageError(request.user_id)"
+                        />
+                        <span v-else>{{ getUserInitials(request.user_id) }}</span>
+                      </div>
+                      <span class="user-name">{{ getUserNickname(request.user_id) }}</span>
+                    </div>
+                    <div class="request-task">
+                      Хочет присоединиться к проекту как исполнитель
+                    </div>
+                  </div>
+                  <div class="request-actions">
+                    <button class="accept-request-btn" @click="acceptJoinRequest(request.id)">✅ Принять</button>
+                    <button class="reject-request-btn" @click="rejectJoinRequest(request.id)">❌ Отклонить</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <!-- Задачи в работе -->
             <div v-if="inProgressTasks.length > 0" class="task-group">
               <h4 class="task-group-title in-progress-title">В работе</h4>
@@ -305,6 +378,11 @@
                     <span v-if="isTaskOverdue(task)" class="overdue-badge">Просрочено</span>
                     <span v-if="isTaskInvalid(task)" class="invalid-badge">Некорректные даты</span>
                     <span v-if="isTaskNotStarted(task)" class="not-started-badge">Не начато</span>
+
+                    <!-- Отображение исполнителя, если есть -->
+                    <span v-if="task.assigned_to" class="assigned-info">
+                      Исполнитель: {{ getUserNickname(task.assigned_to) }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -333,6 +411,11 @@
                     <span v-if="isTaskOverdue(task)" class="overdue-badge">Просрочено</span>
                     <span v-if="isTaskInvalid(task)" class="invalid-badge">Некорректные даты</span>
                     <span v-if="isTaskNotStarted(task)" class="not-started-badge">Не начато</span>
+
+                    <!-- Отображение исполнителя, если есть -->
+                    <span v-if="task.assigned_to" class="assigned-info">
+                      Исполнитель: {{ getUserNickname(task.assigned_to) }}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -377,7 +460,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, computed, watch, watchEffect } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
@@ -386,7 +469,7 @@ import ThemeToggle from '@/components/ThemeToggle.vue';
 import CommentsSection from '@/components/CommentsSection.vue';
 import SuggestionsSection from '@/components/SuggestionsSection.vue';
 import InviteModal from '@/components/InviteModal.vue';
-import type { Project, User, Task, Comment, ProjectRole, Suggestion, SuggestionComment } from '@/types';
+import type { Project, User, Task, Comment, ProjectRole, Suggestion, SuggestionComment, JoinRequest } from '@/types';
 import axios from 'axios';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -406,6 +489,8 @@ const loading = ref(true);
 const error = ref('');
 const showProjectComments = ref(false);
 const showSuggestions = ref(false);
+const showJoinRequests = ref(false);
+const responding = ref(false);
 
 // Состояния для ввода ссылок
 const showGithubInput = ref(false);
@@ -444,6 +529,26 @@ const pendingSuggestionsCount = computed(() => {
   return (project.value?.suggestions || []).filter(s => s.status === 'pending').length;
 });
 
+// --- ЗАПРОСЫ НА ВСТУПЛЕНИЕ ---
+const pendingJoinRequests = computed<JoinRequest[]>(() => {
+  return (project.value?.join_requests?.filter(r => r.status === 'pending') || []) as JoinRequest[];
+});
+const pendingJoinRequestsCount = computed(() => pendingJoinRequests.value.length);
+
+// Есть ли исполнители в проекте
+const hasExecutors = computed(() => {
+  return project.value?.participants?.some(p => p.role === 'executor') || false;
+});
+
+// Является ли текущий пользователь учеником
+const isStudent = computed(() => authStore.user && !authStore.user.is_teacher);
+
+// Есть ли у текущего пользователя ожидающий запрос
+const userPendingRequest = computed(() => {
+  if (!authStore.userId || !project.value?.join_requests) return false;
+  return project.value.join_requests.some(r => r.user_id === authStore.userId && r.status === 'pending');
+});
+
 // Модальное окно приглашения
 const showInviteModal = ref(false);
 
@@ -473,6 +578,49 @@ async function loadProject() {
     loading.value = false;
   }
 }
+
+// --- ДЕЙСТВИЯ С ЗАПРОСАМИ ---
+async function respondToProject() {
+  if (!project.value) return;
+  responding.value = true;
+  try {
+    await axios.post(`${baseUrl}/projects/${project.value.id}/join-requests`);
+    showNotification('Запрос отправлен!', 'success');
+    await loadProject(); // перезагружаем, чтобы увидеть созданный запрос
+  } catch (err: any) {
+    console.error('Failed to respond to project', err);
+    const msg = err.response?.data?.detail || 'Ошибка при отправке запроса';
+    showNotification(msg, 'error');
+  } finally {
+    responding.value = false;
+  }
+}
+
+async function acceptJoinRequest(requestId: string) {
+  if (!project.value) return;
+  try {
+    await axios.put(`${baseUrl}/projects/${project.value.id}/join-requests/${requestId}/accept`);
+    showNotification('Запрос принят', 'success');
+    await loadProject(); // перезагружаем проект, чтобы увидеть нового участника
+  } catch (err) {
+    console.error('Failed to accept request', err);
+    showNotification('Ошибка при принятии запроса', 'error');
+  }
+}
+
+async function rejectJoinRequest(requestId: string) {
+  if (!project.value) return;
+  try {
+    await axios.put(`${baseUrl}/projects/${project.value.id}/join-requests/${requestId}/reject`);
+    showNotification('Запрос отклонён', 'success');
+    await loadProject();
+  } catch (err) {
+    console.error('Failed to reject request', err);
+    showNotification('Ошибка при отклонении запроса', 'error');
+  }
+}
+
+// --- ОСТАЛЬНЫЕ МЕТОДЫ ---
 
 onMounted(loadProject);
 watch(() => route.params.id, loadProject);
@@ -870,9 +1018,80 @@ const goToSuggest = () => router.push(`/project/edit/${route.params.id}?mode=sug
 const goHome = () => router.push('/main');
 const goToUser = (userId: number) => router.push(`/user/${userId}`);
 const openInviteModal = () => { showInviteModal.value = true; };
+
+// Вспомогательная функция для обработки ошибок изображений
+const handleAuthorImageError = (id: number) => {
+  if (!avatarError.value) avatarError.value = {};
+  avatarError.value[id] = true;
+};
+
+const avatarError = ref<Record<number, boolean>>({});
+
+// Функция форматирования даты
+function formatDate(dateStr: string) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  if (diffMins < 1) return 'только что';
+  if (diffMins < 60) return `${diffMins} мин назад`;
+  if (diffHours < 24) return `${diffHours} ч назад`;
+  if (diffDays === 1) return 'вчера';
+  if (diffDays < 7) return `${diffDays} дн назад`;
+  return date.toLocaleDateString('ru-RU', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+// --- Уведомления ---
+const notification = ref({ show: false, message: '', type: 'error' as 'error' | 'info' | 'success' });
+let notificationTimeout: number | null = null;
+
+function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
+  if (notificationTimeout) {
+    clearTimeout(notificationTimeout);
+    notificationTimeout = null;
+  }
+  notification.value = { show: true, message, type };
+  notificationTimeout = window.setTimeout(() => {
+    notification.value.show = false;
+    notificationTimeout = null;
+  }, duration);
+}
+
+// watchEffect для отладки (можно удалить после проверки)
+watchEffect(() => {
+  console.log('isStudent:', isStudent.value);
+  console.log('userRole:', userRole.value);
+  console.log('hasExecutors:', hasExecutors.value);
+  console.log('authStore.user:', authStore.user);
+  console.log('project participants:', project.value?.participants);
+});
 </script>
 
 <style scoped>
+/* Все стили остаются без изменений, добавляем новый класс */
+.already-responded {
+  text-align: center;
+  padding: 12px 24px;
+  background: rgba(76, 175, 80, 0.1);
+  border-radius: 30px;
+  border: 2px solid #4caf50;
+  color: #4caf50;
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 20px;
+}
+.responded-message {
+  display: inline-block;
+}
+/* Остальные стили те же */
 .project-details-page {
   min-height: 100vh;
   background: var(--bg-page);
@@ -1014,7 +1233,8 @@ const openInviteModal = () => { showInviteModal.value = true; };
 .suggestions-btn,
 .suggest-btn,
 .invite-btn,
-.comments-header-btn {
+.comments-header-btn,
+.requests-btn {
   background: var(--accent-color);
   color: var(--button-text);
   border: none;
@@ -1031,7 +1251,8 @@ const openInviteModal = () => { showInviteModal.value = true; };
 .suggestions-btn:hover,
 .suggest-btn:hover,
 .invite-btn:hover,
-.comments-header-btn:hover {
+.comments-header-btn:hover,
+.requests-btn:hover {
   background: var(--accent-hover);
   transform: translateY(-2px);
   box-shadow: var(--shadow-strong);
@@ -1042,7 +1263,8 @@ const openInviteModal = () => { showInviteModal.value = true; };
   gap: 6px;
 }
 .suggestions-icon,
-.comment-icon {
+.comment-icon,
+.requests-icon {
   font-size: 1.1rem;
 }
 .header-unread-badge {
@@ -1062,7 +1284,8 @@ const openInviteModal = () => { showInviteModal.value = true; };
 
 /* Контейнеры для комментариев и предложений */
 .comments-container,
-.suggestions-container {
+.suggestions-container,
+.requests-container {
   margin-bottom: 25px;
   border: 1px solid var(--border-color);
   border-radius: 16px;
@@ -1070,6 +1293,146 @@ const openInviteModal = () => { showInviteModal.value = true; };
   width: 100%;
   box-sizing: border-box;
   background: var(--bg-card);
+  padding: 15px;
+}
+
+/* Специфично для запросов */
+.requests-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 15px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--border-color);
+}
+.requests-header h3 {
+  color: var(--heading-color);
+  font-size: 1.2rem;
+  font-weight: 500;
+  margin: 0;
+}
+.pending-badge {
+  background: var(--accent-color);
+  color: white;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 0.9rem;
+}
+.requests-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.request-item {
+  background: var(--bg-page);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  border-left: 4px solid #ff9800;
+}
+.request-info {
+  flex: 1;
+  min-width: 200px;
+}
+.request-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.user-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--accent-color);
+  color: var(--button-text);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  overflow: hidden;
+}
+.user-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.user-name {
+  font-weight: 600;
+  color: var(--heading-color);
+}
+.request-task {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.request-date {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+.request-actions {
+  display: flex;
+  gap: 8px;
+}
+.accept-request-btn, .reject-request-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.accept-request-btn {
+  background: #4caf50;
+  color: white;
+}
+.accept-request-btn:hover {
+  background: #45a049;
+}
+.reject-request-btn {
+  background: #f44336;
+  color: white;
+}
+.reject-request-btn:hover {
+  background: #da190b;
+}
+.no-requests {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 20px;
+  font-style: italic;
+}
+
+/* Кнопка отклика на проект */
+.respond-project-section {
+  margin-bottom: 20px;
+  text-align: center;
+}
+.respond-project-btn {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 30px;
+  padding: 12px 24px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow);
+}
+.respond-project-btn:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
+}
+.respond-project-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Группы задач */
@@ -1183,6 +1546,35 @@ const openInviteModal = () => { showInviteModal.value = true; };
 }
 .not-started-badge {
   background-color: #757575;
+}
+.assigned-info {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+.respond-btn {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 10px;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+.respond-btn:hover {
+  background: var(--accent-hover);
+}
+.respond-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .no-tasks {
   text-align: center;

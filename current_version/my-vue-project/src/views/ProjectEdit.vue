@@ -61,8 +61,8 @@
                     type="button"
                     class="remove-participant"
                     @click="removeParticipant(index)"
-                    :disabled="participants.length === 1"
-                    :title="participants.length === 1 ? 'Нельзя удалить единственного участника' : 'Удалить'"
+                    :disabled="p.user_id === currentUserId || participants.length === 1"
+                    :title="getRemoveTitle(p.user_id)"
                   >✕</button>
                 </div>
               </div>
@@ -309,6 +309,24 @@ const form = reactive({
 // Участники
 const participants = ref<Participant[]>([]);
 
+// Текущий пользователь
+const currentUserId = computed(() => authStore.user?.id);
+
+// Определение роли создателя проекта
+function getCreatorRole(): ProjectRole {
+  const user = authStore.user;
+  if (!user) return 'executor';
+  if (!user.is_teacher) return 'executor';
+  // Учитель
+  if (user.teacher_info) {
+    if (user.teacher_info.roles?.includes('customer')) return 'customer';
+    if (user.teacher_info.curator) return 'curator';
+    if (user.teacher_info.roles?.includes('supervisor')) return 'supervisor';
+    if (user.teacher_info.roles?.includes('expert')) return 'expert';
+  }
+  return 'executor';
+}
+
 // Поиск пользователей
 interface UserWithRoles extends User {
   availableRoles: ProjectRole[];
@@ -326,13 +344,13 @@ const sendingInvite = ref(false);
 const inviteResult = ref('');
 const inviteSuccess = ref(false);
 
-// Задачи
-type EditableTask = Omit<Task, 'id'> & {
-  id?: number;
+// Задачи – расширяем Task служебными полями для UI
+type EditableTask = Task & {
   expanded: boolean;
   startError?: string;
   endError?: string;
 };
+
 const tasks = ref<EditableTask[]>([]);
 
 // Роль текущего пользователя в проекте
@@ -428,11 +446,23 @@ function addParticipant() {
 }
 
 function removeParticipant(index: number) {
+  const participant = participants.value[index];
+  // Запрещаем удалять самого себя
+  if (participant.user_id === currentUserId.value) {
+    showNotification('Вы не можете удалить себя из проекта', 'info');
+    return;
+  }
   if (participants.value.length === 1) {
     showNotification('Проект должен иметь хотя бы одного участника', 'info');
     return;
   }
   participants.value.splice(index, 1);
+}
+
+function getRemoveTitle(userId: number): string {
+  if (userId === currentUserId.value) return 'Нельзя удалить себя';
+  if (participants.value.length === 1) return 'Нельзя удалить единственного участника';
+  return 'Удалить';
 }
 
 // Загрузка данных
@@ -504,8 +534,17 @@ onMounted(async () => {
       }));
     }
   } else {
+    // Новый проект: добавляем текущего пользователя с его ролью
     isSuggestMode.value = false;
     isApplyingSuggestion.value = false;
+    if (authStore.userId) {
+      const creatorRole = getCreatorRole();
+      participants.value.push({
+        user_id: authStore.userId,
+        role: creatorRole,
+        joined_at: new Date().toISOString(),
+      });
+    }
   }
 });
 
@@ -689,7 +728,7 @@ async function handleSubmit() {
     body: form.body,
     underbody: form.underbody || '',
     participants: participants.value,
-    tasks: tasks.value.map(({ expanded, startError, endError, ...task }) => task),
+    tasks: tasks.value.map(({ expanded, startError, endError, id, ...task }) => task), // id исключается
   };
 
   saving.value = true;
@@ -703,8 +742,10 @@ async function handleSubmit() {
 
     if (isNew) {
       if (!authStore.userId) throw new Error('Пользователь не авторизован');
+      // Убедимся, что текущий пользователь уже есть в participants (должен быть добавлен при монтировании)
       if (!participants.value.some(p => p.user_id === authStore.userId)) {
-        const defaultRole: ProjectRole = 'executor';
+        // На случай, если по какой-то причине его нет – добавляем
+        const defaultRole = getCreatorRole();
         projectData.participants.push({
           user_id: authStore.userId,
           role: defaultRole,

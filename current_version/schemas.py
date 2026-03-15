@@ -3,6 +3,12 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 from enum import Enum
 
+
+class JoinRequest(BaseModel):
+    id: str
+    user_id: int
+    created_at: datetime
+    status: str  # 'pending', 'accepted', 'rejected'
 # ---------- Comment Schema (с полем hidden) ----------
 class Comment(BaseModel):
     id: str
@@ -182,8 +188,9 @@ class ProjectCreate(ProjectBase):
     pass  # Все поля наследуются
 
 class ProjectResponse(ProjectBase):
+    suggestions: List[Suggestion] = []
     id: int
-    suggestions: List[Suggestion] = []   
+    join_requests: List[JoinRequest] = []   # добавлено! 
     model_config = ConfigDict(from_attributes=True)
 
 class ProjectUpdate(BaseModel):
@@ -230,3 +237,9 @@ class InvitationInfo(BaseModel):
     role: ProjectRole
     invited_by: int
     expires_at: datetime
+    
+class JoinRequest(BaseModel):
+    id: str
+    user_id: int
+    created_at: datetime
+    status: str  # "pending", "accepted", "rejected"

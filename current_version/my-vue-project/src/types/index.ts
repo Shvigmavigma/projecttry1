@@ -39,14 +39,16 @@ export interface SubTask {
 }
 
 export interface Task {
+  id?: string;
   title: string;
   status: string;
   body: string;
   timeline?: string;
   timelinend?: string;
-  progress?: number;   
+  progress?: number;
   subtasks?: SubTask[];
   comments?: Comment[];
+  assigned_to?: number;
 }
 
 export interface Comment {
@@ -93,6 +95,13 @@ export interface Invitation {
   expires_at: string;
 }
 
+export interface JoinRequest {
+  id: string;
+  user_id: number;
+  created_at: string;
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
 export interface Project {
   id: number;
   title: string;
@@ -103,6 +112,7 @@ export interface Project {
   links?: ProjectLinks;
   comments?: Comment[];
   suggestions?: Suggestion[];
+  join_requests?: JoinRequest[];  // <-- добавлено
 }
 
 export interface ProjectLinks {

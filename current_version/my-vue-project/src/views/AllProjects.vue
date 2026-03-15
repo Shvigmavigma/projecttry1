@@ -8,6 +8,31 @@
       </div>
     </header>
 
+    <!-- Вкладки -->
+    <div class="filter-tabs">
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'all' }"
+        @click="filterType = 'all'"
+      >
+        Все проекты
+      </button>
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'free' }"
+        @click="filterType = 'free'"
+      >
+        Свободные
+      </button>
+      <button
+        class="tab-button"
+        :class="{ active: filterType === 'taken' }"
+        @click="filterType = 'taken'"
+      >
+        Занятые
+      </button>
+    </div>
+
     <div class="search-container">
       <input
         v-model="search"
@@ -17,10 +42,10 @@
     </div>
 
     <div v-if="loading" class="loading">Загрузка...</div>
-    <div v-else-if="projects.length === 0" class="no-projects">Проекты не найдены</div>
+    <div v-else-if="filteredProjects.length === 0" class="no-projects">Проекты не найдены</div>
     <div v-else class="projects-grid">
       <div
-        v-for="project in projects"
+        v-for="project in filteredProjects"
         :key="project.id"
         class="project-card"
         @click="goToProject(project.id)"
@@ -58,7 +83,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
@@ -71,8 +96,19 @@ const projects = ref<Project[]>([]);
 const search = ref('');
 const loading = ref(true);
 const avatarError = ref<Record<number, boolean>>({});
+const filterType = ref<'all' | 'free' | 'taken'>('all');
 
 const baseUrl = 'http://localhost:8000';
+
+const filteredProjects = computed(() => {
+  if (filterType.value === 'all') return projects.value;
+  if (filterType.value === 'free') {
+    // Проекты без исполнителей (нет участников с ролью executor)
+    return projects.value.filter(p => !p.participants.some(part => part.role === 'executor'));
+  }
+  // taken – проекты, у которых есть хотя бы один исполнитель
+  return projects.value.filter(p => p.participants.some(part => part.role === 'executor'));
+});
 
 onMounted(async () => {
   if (usersStore.users.length === 0) {
@@ -349,5 +385,32 @@ function goHome() {
   color: var(--text-primary);
   font-size: 1.2rem;
   padding: 40px;
+}
+
+/* Стили для вкладок */
+.filter-tabs {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-bottom: 30px;
+  flex-wrap: wrap;
+}
+.tab-button {
+  padding: 10px 30px;
+  border: 2px solid var(--border-color);
+  border-radius: 50px;
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+.tab-button.active {
+  border-color: var(--accent-color);
+  background: rgba(66, 185, 131, 0.1);
+  color: var(--accent-color);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(66, 185, 131, 0.2);
 }
 </style>

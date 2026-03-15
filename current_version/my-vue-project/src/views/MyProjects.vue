@@ -8,11 +8,20 @@
       </div>
     </header>
 
+    <!-- Кнопка создания проекта для заказчиков и кураторов (над списком) -->
+    <div v-if="canCreateProject" class="create-section">
+      <button class="create-button-top" @click="createProject">
+        + Создать новый проект
+      </button>
+    </div>
+
     <div v-if="loading" class="loading">Загрузка проектов...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="projects.length === 0" class="no-projects">
       <p>У вас пока нет проектов</p>
-      <button class="create-button" @click="createProject">Создать проект</button>
+      <button v-if="canCreateProject" class="create-button" @click="createProject">
+        Создать проект
+      </button>
     </div>
     <div v-else class="projects-grid">
       <div
@@ -76,6 +85,17 @@ const currentUserId = computed(() => authStore.user?.id);
 const isAuthenticated = computed(() => authStore.isAuthenticated);
 
 const baseUrl = 'http://localhost:8000';
+
+// Проверка, может ли пользователь создавать проекты (заказчик или куратор)
+const canCreateProject = computed(() => {
+  const user = authStore.user;
+  if (!user) return false;
+  // Учитель с ролью заказчика или куратора
+  if (user.is_teacher && user.teacher_info) {
+    return user.teacher_info.roles?.includes('customer') || user.teacher_info.curator === true;
+  }
+  return false;
+});
 
 onMounted(async () => {
   console.log('MyProjects mounted - checking auth...');
@@ -231,6 +251,7 @@ function goHome() {
 .header-actions {
   display: flex;
   gap: 10px;
+  align-items: center;
 }
 
 .home-button {
@@ -255,6 +276,33 @@ function goHome() {
 
 .light-theme .home-button:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+/* Секция с кнопкой создания проекта */
+.create-section {
+  max-width: 1200px;
+  margin: 0 auto 30px;
+  display: flex;
+  justify-content: flex-start;
+}
+
+.create-button-top {
+  background: var(--accent-color);
+  color: var(--button-text);
+  border: none;
+  border-radius: 30px;
+  padding: 12px 24px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: var(--shadow);
+}
+
+.create-button-top:hover {
+  background: var(--accent-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-strong);
 }
 
 .projects-grid {

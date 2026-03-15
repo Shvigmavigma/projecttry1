@@ -36,3 +36,4 @@ class Project(Base):
     links = Column(JSON, default=dict)
     comments = Column(JSON, default=list)
     suggestions = Column(JSON, default=list)           # <-- новое поле для предложений
+    join_requests = Column(JSON, default=list)

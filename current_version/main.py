@@ -646,6 +646,137 @@ async def upload_avatar(
 
 # ==================== PROJECTS ====================
 
+@app.post("/projects/{project_id}/join-requests", response_model=ProjectResponse, tags=["Projects"])
+async def create_join_request(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Создать запрос на вступление в проект как исполнитель.
+    Доступно только для учеников (не учителей), не являющихся участниками проекта.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем, что пользователь не участник
+    if any(p.get("user_id") == current_user.id for p in (project.participants or [])):
+        raise HTTPException(status_code=400, detail="You are already a participant")
+
+    # Только ученики
+    if current_user.is_teacher:
+        raise HTTPException(status_code=403, detail="Only students can request to join as executor")
+
+    # Проверяем, нет ли уже ожидающего запроса от этого пользователя
+    if project.join_requests:
+        existing = next((r for r in project.join_requests if r.get("user_id") == current_user.id and r.get("status") == "pending"), None)
+        if existing:
+            raise HTTPException(status_code=400, detail="You already have a pending request")
+
+    # Создаём запрос
+    new_request = {
+        "id": str(uuid.uuid4()),
+        "user_id": current_user.id,
+        "created_at": datetime.utcnow().isoformat(),
+        "status": "pending"
+    }
+    if project.join_requests is None:
+        project.join_requests = []
+    project.join_requests.append(new_request)
+
+    # Помечаем поле как изменённое для SQLAlchemy
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(project, "join_requests")
+
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.put("/projects/{project_id}/join-requests/{request_id}/accept", response_model=ProjectResponse, tags=["Projects"])
+async def accept_join_request(
+    project_id: int,
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Принять запрос на вступление. Доступно только заказчику или куратору.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Проверяем роль текущего пользователя
+    role = get_participant_role(project, current_user.id)
+    if role not in [ProjectRole.CUSTOMER.value, ProjectRole.CURATOR.value]:
+        raise HTTPException(status_code=403, detail="Only customer or curator can accept join requests")
+
+    # Ищем запрос
+    request = None
+    for r in (project.join_requests or []):
+        if r.get("id") == request_id:
+            request = r
+            break
+    if not request:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    if request.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Request already processed")
+
+    # Меняем статус
+    request["status"] = "accepted"
+
+    # Добавляем пользователя в участники с ролью executor
+    new_participant = {
+        "user_id": request["user_id"],
+        "role": ProjectRole.EXECUTOR.value,
+        "joined_at": datetime.utcnow().isoformat()
+    }
+    if project.participants is None:
+        project.participants = []
+    project.participants.append(new_participant)
+
+    flag_modified(project, "join_requests")
+    flag_modified(project, "participants")
+    db.commit()
+    db.refresh(project)
+    return project
+
+@app.put("/projects/{project_id}/join-requests/{request_id}/reject", response_model=ProjectResponse, tags=["Projects"])
+async def reject_join_request(
+    project_id: int,
+    request_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Отклонить запрос на вступление. Доступно только заказчику или куратору.
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    role = get_participant_role(project, current_user.id)
+    if role not in [ProjectRole.CUSTOMER.value, ProjectRole.CURATOR.value]:
+        raise HTTPException(status_code=403, detail="Only customer or curator can reject join requests")
+
+    request = None
+    for r in (project.join_requests or []):
+        if r.get("id") == request_id:
+            request = r
+            break
+    if not request:
+        raise HTTPException(status_code=404, detail="Join request not found")
+    if request.get("status") != "pending":
+        raise HTTPException(status_code=400, detail="Request already processed")
+
+    request["status"] = "rejected"
+    flag_modified(project, "join_requests")
+    db.commit()
+    db.refresh(project)
+    return project
+
+
 @app.post("/projects/", response_model=ProjectResponse, summary="Создать проект", tags=["Projects"])
 async def create_project(
     project: ProjectCreate,
@@ -705,7 +836,7 @@ async def create_project(
 
 @app.get("/projects/", response_model=List[ProjectResponse], summary="Список проектов", tags=["Projects"])
 async def get_projects(
-    participant_id: Optional[int] = Query(None, alias="author_id", description="ID участника для фильтрации проектов"),
+    participant_id: Optional[int] = Query(None, description="ID участника для фильтрации проектов"),
     db: Session = Depends(get_db)
 ):
     """
