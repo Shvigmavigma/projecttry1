@@ -7,6 +7,8 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 import os
 from dotenv import load_dotenv
+from models import User
+
 
 load_dotenv()
 
@@ -14,8 +16,7 @@ SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 REFRESH_TOKEN_EXPIRE_DAYS = 7
-
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
@@ -37,7 +38,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     except Exception as e:
         print(f"Error verifying password: {e}")
         return False
-
 def get_password_hash(password: str) -> str:
     """
     Создает хеш пароля для сохранения в базе данных
@@ -110,3 +110,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         return user
     finally:
         db.close()
+async def get_current_admin(current_user: User = Depends(get_current_user)):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return current_user

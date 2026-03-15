@@ -28,6 +28,7 @@ export interface User {
   updated_at?: string;
   is_teacher?: boolean;
   teacher_info?: TeacherInfo;
+  is_admin?: boolean;
 }
 
 export interface SubTask {
@@ -98,7 +99,6 @@ export interface Invitation {
 export interface JoinRequest {
   id: string;
   user_id: number;
-  created_at: string;
   status: 'pending' | 'accepted' | 'rejected';
 }
 

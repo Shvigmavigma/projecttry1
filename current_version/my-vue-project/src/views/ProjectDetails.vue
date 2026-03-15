@@ -206,7 +206,7 @@
               <button class="edit-project-button" @click="goToEdit">✎ Редактировать проект</button>
               <button class="delete-project-button" @click="deleteProject">🗑 Удалить проект</button>
             </div>
-            <div v-if="userRole === 'executor' || userRole === 'curator'" class="project-actions">
+            <div v-if="userRole === 'executor' || userRole === 'curator' || authStore.user?.is_admin || isCurator" class="project-actions">
               <button v-if="userRole === 'executor'" class="edit-project-button" @click="goToEdit">✎ Редактировать проект</button>
               <button class="delete-project-button" @click="hideProject">🗑 Скрыть проект</button>
             </div>
@@ -221,7 +221,7 @@
             <div class="task-header-buttons">
               <!-- Кнопка показа предложений -->
               <button 
-                v-if="userRole" 
+                v-if="userRole || authStore.user?.is_admin || isCurator" 
                 class="suggestions-btn" 
                 @click="showSuggestions = !showSuggestions"
               >
@@ -260,9 +260,9 @@
                 </span>
               </button>
 
-              <!-- Кнопка: Запросы на вступление (только для заказчика и куратора) -->
+              <!-- Кнопка: Запросы на вступление (только для заказчика, куратора и администратора) -->
               <button 
-                v-if="userRole === 'customer' || userRole === 'curator'" 
+                v-if="userRole === 'customer' || userRole === 'curator' || authStore.user?.is_admin || isCurator" 
                 class="requests-btn" 
                 @click="showJoinRequests = !showJoinRequests"
               >
@@ -276,19 +276,12 @@
               </button>
             </div>
 
-            <!-- Кнопка отклика для учеников (не участников) (дублируется, можно оставить для красоты) -->
-            <!-- <div v-if="isStudent && !userRole && !hasExecutors" class="respond-project-section">
-              <button class="respond-project-btn" @click="respondToProject" :disabled="responding">
-                {{ responding ? 'Отправка...' : '👋 Откликнуться на проект' }}
-              </button>
-            </div> -->
-
             <!-- Блок предложений -->
             <div v-if="showSuggestions" class="suggestions-container">
               <SuggestionsSection
                 :project-id="project.id"
                 :suggestions="suggestions"
-                :is-project-participant="!!userRole"
+                :is-project-participant="!!userRole || authStore.user?.is_admin || isCurator"
                 :can-edit="canEdit"
                 :can-hide-comments="canHideComments"
                 :on-accept="acceptSuggestion"
@@ -304,12 +297,15 @@
             <div v-if="showProjectComments" class="comments-container">
               <CommentsSection
                 :comments="project.comments || []"
-                :can-comment="!!userRole"
+                :can-comment="!!userRole || authStore.user?.is_admin || isCurator"
                 :is-author="canEdit"
                 :can-hide-comments="canHideComments"
+                :is-admin="authStore.user?.is_admin"
+                :is-curator="isCurator"
                 :on-add-comment="addProjectComment"
                 :on-mark-as-read="markProjectCommentAsRead"
                 :on-hide-comment="hideProjectComment"
+                :on-permanent-delete="permanentDeleteComment"
               />
             </div>
 
@@ -509,12 +505,47 @@ const userRole = computed<ProjectRole | null>(() => {
   return participant?.role || null;
 });
 
-// Права
-const canEdit = computed(() => userRole.value === 'customer');
-const canSuggest = computed(() => userRole.value === 'expert' || userRole.value === 'supervisor' || userRole.value === 'executor');
-const canHideComments = computed(() => userRole.value === 'supervisor');
-const canInvite = computed(() => userRole.value === 'customer' || userRole.value === 'supervisor');
+// Является ли пользователь куратором (глобально)
+const isCurator = computed(() => {
+  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
+});
 
+// Права (с учётом админа и куратора)
+const canEdit = computed(() => 
+  userRole.value === 'customer' || 
+  authStore.user?.is_admin || 
+  isCurator.value
+);
+
+const canSuggest = computed(() => 
+  ['expert', 'supervisor', 'executor'].includes(userRole.value) || 
+  authStore.user?.is_admin || 
+  isCurator.value
+);
+
+const canHideComments = computed(() => 
+  userRole.value === 'supervisor' || 
+  authStore.user?.is_admin || 
+  isCurator.value
+);
+
+const canInvite = computed(() => 
+  userRole.value === 'customer' || 
+  userRole.value === 'supervisor' || 
+  authStore.user?.is_admin || 
+  isCurator.value
+);
+const permanentDeleteComment = async (commentId: string) => {
+  if (!project.value) return;
+  try {
+    await axios.delete(`${baseUrl}/admin/comments/${commentId}`);
+    showNotification('Комментарий удалён навсегда', 'success');
+    await loadProject();
+  } catch (error) {
+    console.error('Failed to delete comment permanently', error);
+    showNotification('Ошибка при удалении комментария', 'error');
+  }
+};
 // Количество непрочитанных комментариев
 const unreadProjectCommentsCount = computed(() => {
   const comments = project.value?.comments || [];
@@ -1076,7 +1107,6 @@ watchEffect(() => {
 </script>
 
 <style scoped>
-/* Все стили остаются без изменений, добавляем новый класс */
 .already-responded {
   text-align: center;
   padding: 12px 24px;
@@ -1091,7 +1121,6 @@ watchEffect(() => {
 .responded-message {
   display: inline-block;
 }
-/* Остальные стили те же */
 .project-details-page {
   min-height: 100vh;
   background: var(--bg-page);

@@ -23,7 +23,7 @@
       <h2 class="user-nickname">{{ user.nickname }}</h2>
       <p class="user-fullname">{{ user.fullname }}</p>
       <p class="user-email">{{ user.email }}</p>
-      <p class="user-class">Класс: {{ user.class }}</p>
+      <p class="user-class">{{ user.class==0? "Учитель" : "Класс " + user.class }}</p>
       <p v-if="user.speciality" class="user-speciality">Специальность: {{ user.speciality }}</p>
       <div v-if="user.is_teacher && user.teacher_info" class="user-roles">
         Роли: {{ formatTeacherRoles(user.teacher_info) }}

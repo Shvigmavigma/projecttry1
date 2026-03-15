@@ -1,5 +1,5 @@
 <template>
-  <div class="project-edit-page">
+  <div class="admin-project-edit-page">
     <!-- Уведомление об ошибке/информации -->
     <Transition name="fade">
       <div v-if="notification.show" class="notification" :class="notification.type">
@@ -13,20 +13,14 @@
       <div class="header-actions">
         <ThemeToggle />
         <button class="home-button" @click="goHome" title="На главную">🏠</button>
+        <button class="back-button" @click="goBack" title="Назад">◀</button>
       </div>
     </header>
 
-    <!-- Информационная подсказка о правах -->
-    <div v-if="!isNew" class="permission-hint" :class="{ 'admin-hint': isAdminOrCurator }">
-      <span class="hint-icon">{{ isAdminOrCurator ? '⚙️' : 'ℹ️' }}</span>
-      <span class="hint-text">
-        <template v-if="isAdminOrCurator">
-          Вы имеете полные права как администратор или куратор.
-        </template>
-        <template v-else>
-          Редактировать проект могут только заказчик, исполнитель, администратор или куратор.
-        </template>
-      </span>
+    <!-- Информационная подсказка для админа -->
+    <div class="admin-hint">
+      <span class="hint-icon">⚙️</span>
+      <span class="hint-text">Вы редактируете проект как администратор. Все ограничения сняты.</span>
     </div>
 
     <div class="edit-card">
@@ -68,8 +62,7 @@
                     type="button"
                     class="remove-participant"
                     @click="removeParticipant(index)"
-                    :disabled="p.user_id === currentUserId || participants.length === 1"
-                    :title="getRemoveTitle(p.user_id)"
+                    :title="'Удалить'"
                   >✕</button>
                 </div>
               </div>
@@ -103,17 +96,11 @@
                 </div>
               </div>
             </div>
-            <div v-if="isSuggestMode" class="suggest-note">
-              <p>⚠️ В режиме предложения вы можете изменять любые поля – они будут отправлены как предложение.</p>
-            </div>
-            <div v-if="isApplyingSuggestion" class="suggest-note">
-              <p>📝 Вы редактируете проект на основе предложения. После сохранения предложение будет автоматически принято.</p>
-            </div>
           </div>
         </div>
 
-        <!-- Приглашение по email (только для существующих проектов) -->
-        <div v-if="isEdit" class="form-section">
+        <!-- Приглашение по email (всегда доступно для админа) -->
+        <div class="form-section">
           <h2>Пригласить участника по email</h2>
           <div class="invite-section">
             <div class="invite-row">
@@ -230,20 +217,14 @@
               </div>
             </div>
           </div>
-          <div v-if="isSuggestMode" class="suggest-note">
-            <p>⚠️ В режиме предложения вы можете изменять задачи, они будут включены в предложение как есть.</p>
-          </div>
-          <div v-if="isApplyingSuggestion" class="suggest-note">
-            <p>📝 Вы редактируете задачи на основе предложения. После сохранения предложение будет автоматически принято.</p>
-          </div>
         </div>
 
         <!-- Кнопки отправки -->
         <div class="form-actions">
           <button type="submit" class="save-button" :disabled="saving">
-            {{ saving ? (isSuggestMode ? 'Отправка...' : (isApplyingSuggestion ? 'Принять и сохранить...' : 'Сохранение...')) : submitButtonText }}
+            {{ saving ? 'Сохранение...' : (isNew ? 'Создать проект' : 'Сохранить изменения') }}
           </button>
-          <button type="button" class="cancel-button" @click="goBack">{{ cancelButtonText }}</button>
+          <button type="button" class="cancel-button" @click="goBack">Отмена</button>
         </div>
       </form>
     </div>
@@ -257,7 +238,7 @@ import { useProjectsStore } from '@/stores/projects';
 import { useAuthStore } from '@/stores/auth';
 import { useUsersStore } from '@/stores/users';
 import ThemeToggle from '@/components/ThemeToggle.vue';
-import type { Project, Task, User, Participant, ProjectRole, Suggestion } from '@/types';
+import type { Project, Task, User, Participant, ProjectRole } from '@/types';
 import axios from 'axios';
 
 const baseUrl = 'http://localhost:8000';
@@ -270,10 +251,6 @@ const usersStore = useUsersStore();
 
 const projectId = Number(route.params.id);
 const isNew = route.params.id === 'new';
-const isEdit = computed(() => !isNew);
-const isSuggestMode = ref(false);
-const isApplyingSuggestion = ref(false);
-const applyingSuggestionId = ref<string | null>(null);
 
 const saving = ref(false);
 
@@ -316,32 +293,6 @@ const form = reactive({
 // Участники
 const participants = ref<Participant[]>([]);
 
-// Текущий пользователь
-const currentUserId = computed(() => authStore.user?.id);
-
-// Является ли пользователь куратором (глобально)
-const isCurator = computed(() => {
-  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
-});
-
-// Является ли пользователь администратором или куратором
-const isAdminOrCurator = computed(() => authStore.user?.is_admin || isCurator.value);
-
-// Определение роли создателя проекта
-function getCreatorRole(): ProjectRole {
-  const user = authStore.user;
-  if (!user) return 'executor';
-  if (!user.is_teacher) return 'executor';
-  // Учитель
-  if (user.teacher_info) {
-    if (user.teacher_info.roles?.includes('customer')) return 'customer';
-    if (user.teacher_info.curator) return 'curator';
-    if (user.teacher_info.roles?.includes('supervisor')) return 'supervisor';
-    if (user.teacher_info.roles?.includes('expert')) return 'expert';
-  }
-  return 'executor';
-}
-
 // Поиск пользователей
 interface UserWithRoles extends User {
   availableRoles: ProjectRole[];
@@ -368,39 +319,9 @@ type EditableTask = Task & {
 
 const tasks = ref<EditableTask[]>([]);
 
-// Роль текущего пользователя в проекте
-const userRole = ref<ProjectRole | null>(null);
-
-// Право предлагать изменения (с учётом админа и куратора)
-const canSuggest = computed(() =>
-  userRole.value === 'expert' ||
-  userRole.value === 'supervisor' ||
-  userRole.value === 'executor' ||
-  authStore.user?.is_admin ||
-  isCurator.value
-);
-
-// Право на прямое редактирование проекта (с учётом админа и куратора)
-const canEdit = computed(() => 
-  userRole.value === 'customer' || 
-  userRole.value === 'executor' || 
-  authStore.user?.is_admin || 
-  isCurator.value
-);
-
 const pageTitle = computed(() => {
-  if (isNew) return 'Создание нового проекта';
-  if (isApplyingSuggestion.value) return 'Применить предложение';
-  return isSuggestMode.value ? 'Предложить изменения проекта' : 'Редактирование проекта';
+  return isNew ? 'Создание нового проекта (админ)' : 'Редактирование проекта (админ)';
 });
-
-const submitButtonText = computed(() => {
-  if (isNew) return 'Создать проект';
-  if (isApplyingSuggestion.value) return 'Принять и сохранить';
-  return isSuggestMode.value ? 'Отправить предложение' : 'Сохранить изменения';
-});
-
-const cancelButtonText = computed(() => 'Отмена');
 
 // Получение доступных ролей для пользователя
 function getAvailableRoles(user: User): ProjectRole[] {
@@ -440,7 +361,6 @@ function selectUser(user: UserWithRoles) {
   selectedUser.value = user;
   searchQuery.value = user.nickname;
   searchResults.value = [];
-  // Устанавливаем роль по умолчанию – первую доступную
   selectedRole.value = user.availableRoles[0];
 }
 
@@ -468,23 +388,7 @@ function addParticipant() {
 }
 
 function removeParticipant(index: number) {
-  const participant = participants.value[index];
-  // Запрещаем удалять самого себя (кроме админа/куратора – они могут?)
-  if (!isAdminOrCurator.value && participant.user_id === currentUserId.value) {
-    showNotification('Вы не можете удалить себя из проекта', 'info');
-    return;
-  }
-  if (participants.value.length === 1) {
-    showNotification('Проект должен иметь хотя бы одного участника', 'info');
-    return;
-  }
   participants.value.splice(index, 1);
-}
-
-function getRemoveTitle(userId: number): string {
-  if (!isAdminOrCurator.value && userId === currentUserId.value) return 'Нельзя удалить себя';
-  if (participants.value.length === 1) return 'Нельзя удалить единственного участника';
-  return 'Удалить';
 }
 
 // Загрузка данных
@@ -493,101 +397,31 @@ onMounted(async () => {
     await usersStore.fetchAllUsers();
   }
 
-  // Проверяем query-параметр suggestion
-  const suggestionParam = route.query.suggestion as string | undefined;
-  if (suggestionParam && !isNew) {
-    isApplyingSuggestion.value = true;
-    applyingSuggestionId.value = suggestionParam;
-  }
-
   if (!isNew) {
     if (isNaN(projectId)) {
-      router.push('/main');
+      router.push('/admin');
       return;
     }
     const project = await projectsStore.fetchProjectById(projectId);
     if (!project) {
-      router.push('/main');
+      router.push('/admin');
       return;
     }
 
-    const participant = project.participants?.find(p => p.user_id === authStore.userId);
-    userRole.value = participant?.role || null;
-
-    // Если мы в режиме применения предложения, загружаем предложение
-    if (isApplyingSuggestion.value && applyingSuggestionId.value) {
-      const suggestion = project.suggestions?.find(s => s.id === applyingSuggestionId.value);
-      if (!suggestion) {
-        showNotification('Предложение не найдено', 'error');
-        router.push(`/project/${projectId}`);
-        return;
-      }
-      // Применяем изменения из предложения к форме
-      applySuggestionChanges(suggestion);
-    } else {
-      // Обычный режим – проверяем права
-      const modeParam = route.query.mode;
-      if (modeParam === 'suggest') {
-        // Для режима предложения достаточно прав canSuggest
-        if (!canSuggest.value) {
-          showNotification('У вас нет прав для создания предложения', 'error');
-          setTimeout(() => router.push(`/project/${projectId}`), 2000);
-          return;
-        }
-        isSuggestMode.value = true;
-      } else {
-        // Для обычного редактирования проверяем canEdit
-        if (!canEdit.value) {
-          showNotification('У вас нет прав для редактирования проекта. Только заказчик, исполнитель, администратор или куратор могут редактировать.', 'info');
-          setTimeout(() => router.push(`/project/${projectId}`), 2000);
-          return;
-        }
-        isSuggestMode.value = false;
-      }
-
-      // Заполняем форму текущими данными проекта
-      form.title = project.title;
-      form.body = project.body;
-      form.underbody = project.underbody || '';
-      participants.value = project.participants || [];
-      tasks.value = (project.tasks || []).map(task => ({
-        ...task,
-        expanded: false,
-        startError: undefined,
-        endError: undefined,
-      }));
-    }
-  } else {
-    // Новый проект: добавляем текущего пользователя с его ролью
-    isSuggestMode.value = false;
-    isApplyingSuggestion.value = false;
-    if (authStore.userId) {
-      const creatorRole = getCreatorRole();
-      participants.value.push({
-        user_id: authStore.userId,
-        role: creatorRole,
-        joined_at: new Date().toISOString(),
-      });
-    }
-  }
-});
-
-// Применение изменений из предложения
-function applySuggestionChanges(suggestion: Suggestion) {
-  const changes = suggestion.changes;
-  if (changes.title) form.title = changes.title;
-  if (changes.body) form.body = changes.body;
-  if (changes.underbody) form.underbody = changes.underbody;
-  if (changes.participants) participants.value = changes.participants;
-  if (changes.tasks) {
-    tasks.value = changes.tasks.map((task: any) => ({
+    // Заполняем форму текущими данными проекта
+    form.title = project.title;
+    form.body = project.body;
+    form.underbody = project.underbody || '';
+    participants.value = project.participants || [];
+    tasks.value = (project.tasks || []).map(task => ({
       ...task,
       expanded: false,
       startError: undefined,
       endError: undefined,
     }));
   }
-}
+  // Для нового проекта ничего не добавляем автоматически – админ сам добавит участников
+});
 
 function getUserNickname(id: number): string {
   const user = usersStore.users.find(u => u.id === id);
@@ -606,7 +440,10 @@ function getRoleDisplay(role: ProjectRole): string {
 }
 
 async function sendInvite() {
-  if (!inviteEmail.value || !isEdit.value) return;
+  if (!inviteEmail.value || isNew) {
+    showNotification('Приглашения можно отправлять только для существующих проектов', 'info');
+    return;
+  }
   sendingInvite.value = true;
   inviteResult.value = '';
   inviteSuccess.value = false;
@@ -728,7 +565,7 @@ function toggleTaskExpand(index: number) {
   tasks.value[index].expanded = !tasks.value[index].expanded;
 }
 
-// Сохранение / отправка предложения
+// Сохранение проекта
 async function handleSubmit() {
   if (!form.title.trim() || !form.body.trim()) {
     showNotification('Заполните название и описание проекта', 'info');
@@ -742,70 +579,36 @@ async function handleSubmit() {
     }
   }
 
-  if (participants.value.length === 0 && !isNew) {
-    showNotification('Проект должен иметь хотя бы одного участника', 'info');
-    return;
-  }
-
   const projectData = {
     title: form.title,
     body: form.body,
     underbody: form.underbody || '',
     participants: participants.value,
-    tasks: tasks.value.map(({ expanded, startError, endError, id, ...task }) => task), // id исключается
+    tasks: tasks.value.map(({ expanded, startError, endError, id, ...task }) => task),
   };
 
   saving.value = true;
 
   try {
-    // Если мы в режиме применения предложения, сначала принимаем предложение
-    if (isApplyingSuggestion.value && applyingSuggestionId.value) {
-      await axios.put(`${baseUrl}/projects/${projectId}/suggestions/${applyingSuggestionId.value}/accept`);
-      showNotification('Предложение принято', 'success');
-    }
-
     if (isNew) {
-      if (!authStore.userId) throw new Error('Пользователь не авторизован');
-      // Убедимся, что текущий пользователь уже есть в participants (должен быть добавлен при монтировании)
-      if (!participants.value.some(p => p.user_id === authStore.userId)) {
-        // На случай, если по какой-то причине его нет – добавляем
-        const defaultRole = getCreatorRole();
-        projectData.participants.push({
-          user_id: authStore.userId,
-          role: defaultRole,
-          joined_at: new Date().toISOString(),
-        });
-      }
       const created = await projectsStore.createProject(projectData);
       showNotification('Проект успешно создан', 'success');
-      router.push(`/project/${created.id}`);
-    } else if (isSuggestMode.value) {
-      const suggestionData = {
-        target_type: 'project',
-        changes: projectData,
-      };
-      await axios.post(`${baseUrl}/projects/${projectId}/suggestions`, suggestionData);
-      showNotification('Предложение отправлено!', 'success');
-      setTimeout(() => router.push(`/project/${projectId}`), 1500);
+      setTimeout(() => router.push(`/admin/projects`), 1500);
     } else {
       await projectsStore.updateProject(projectId, projectData);
       showNotification('Изменения сохранены', 'success');
-      setTimeout(() => router.push(`/project/${projectId}`), 1500);
+      setTimeout(() => router.push(`/admin/projects`), 1500);
     }
   } catch (err: any) {
     console.error('Ошибка сохранения проекта:', err);
-    if (err.response?.status === 403) {
-      showNotification('У вас недостаточно прав. Только заказчик, исполнитель, администратор или куратор могут редактировать проект.', 'error');
-    } else {
-      showNotification('Не удалось сохранить изменения. Пожалуйста, попробуйте позже.', 'error');
-    }
+    showNotification('Не удалось сохранить изменения. Пожалуйста, попробуйте позже.', 'error');
   } finally {
     saving.value = false;
   }
 }
 
 const goHome = () => router.push('/main');
-const goBack = () => router.go(-1);
+const goBack = () => router.push('/admin/projects');
 </script>
 
 <style scoped>
@@ -873,13 +676,13 @@ const goBack = () => router.go(-1);
   opacity: 0;
 }
 
-/* Подсказка о правах */
-.permission-hint {
+/* Подсказка для админа */
+.admin-hint {
   max-width: 800px;
   margin: 0 auto 15px;
   padding: 10px 16px;
-  background-color: rgba(33, 150, 243, 0.1);
-  border-left: 4px solid #2196f3;
+  background-color: rgba(255, 193, 7, 0.1);
+  border-left: 4px solid #ffc107;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -888,16 +691,11 @@ const goBack = () => router.go(-1);
   font-size: 0.95rem;
 }
 
-.permission-hint.admin-hint {
-  background-color: rgba(255, 193, 7, 0.1);
-  border-left-color: #ffc107;
-}
-
 .hint-icon {
   font-size: 1.2rem;
 }
 
-/* Остальные стили остаются без изменений */
+/* Остальные стили (как в обычном ProjectEdit) */
 .invite-section {
   display: flex;
   flex-direction: column;
@@ -1018,10 +816,6 @@ const goBack = () => router.go(-1);
 .remove-participant:hover:not(:disabled) {
   background: var(--danger-bg);
 }
-.remove-participant:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
 .search-row {
   display: flex;
   gap: 10px;
@@ -1068,7 +862,7 @@ const goBack = () => router.go(-1);
   color: var(--text-secondary);
   margin-left: 8px;
 }
-.project-edit-page {
+.admin-project-edit-page {
   min-height: 100vh;
   background: var(--bg-page);
   padding: 20px;
@@ -1092,7 +886,7 @@ const goBack = () => router.go(-1);
   gap: 10px;
   align-items: center;
 }
-.home-button {
+.home-button, .back-button {
   background: none;
   border: none;
   font-size: 2rem;
@@ -1107,10 +901,11 @@ const goBack = () => router.go(-1);
   transition: background 0.2s;
   color: var(--text-primary);
 }
-.home-button:hover {
+.home-button:hover, .back-button:hover {
   background: rgba(255, 255, 255, 0.1);
 }
-.light-theme .home-button:hover {
+.light-theme .home-button:hover,
+.light-theme .back-button:hover {
   background: rgba(0, 0, 0, 0.05);
 }
 .edit-card {
@@ -1331,15 +1126,6 @@ textarea {
 }
 .cancel-task-button:hover {
   background: var(--bg-card);
-}
-.suggest-note {
-  margin-top: 15px;
-  padding: 10px;
-  background: rgba(255, 152, 0, 0.1);
-  border-left: 4px solid #ff9800;
-  border-radius: 4px;
-  color: var(--text-secondary);
-  font-size: 0.9rem;
 }
 .form-actions {
   display: flex;

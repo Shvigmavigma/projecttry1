@@ -45,7 +45,7 @@
             <span class="comment-date">{{ formatDate(comment.createdAt) }}</span>
             <span v-if="!comment.isRead && isAuthor" class="unread-badge">Новый</span>
 
-            <!-- Кнопка скрытия для всех, у кого есть права (автор или заказчик) -->
+            <!-- Кнопка скрытия для всех, у кого есть права (автор, заказчик, админ, куратор) -->
             <button
               v-if="canHide(comment) && !comment.hidden"
               class="delete-comment-btn"
@@ -55,21 +55,21 @@
               <span class="delete-icon">🗑️</span>
             </button>
 
-            <!-- Дополнительная кнопка для куратора (на будущее) -->
+            <!-- Кнопка окончательного удаления для скрытых комментариев (только админ/куратор) -->
             <button
-              v-if="canHideComments && canHide(comment) && !comment.hidden"
-              class="hide-comment-btn"
-              @click="confirmHideComment(comment)"
-              title="Скрыть комментарий (особое действие)"
+              v-if="comment.hidden && (isAdmin || isCurator)"
+              class="permanent-delete-btn"
+              @click="confirmPermanentDelete(comment)"
+              title="Удалить навсегда"
             >
-              <span class="hide-icon">🙈</span>
+              <span class="delete-icon">🔥</span>
             </button>
           </div>
         </div>
         <div class="comment-content" :class="{ 'hidden-content': comment.hidden }">
           {{ comment.content }}
         </div>
-        <!-- Кнопка "Отметить как прочитанное" – теперь доступна всем участникам (canComment) -->
+        <!-- Кнопка "Отметить как прочитанное" -->
         <div v-if="!comment.isRead && canComment" class="comment-actions">
           <button @click="markAsRead(comment.id)" class="mark-read-btn">Отметить как прочитанное</button>
         </div>
@@ -77,16 +77,30 @@
     </div>
     <div v-else class="no-comments">Пока нет комментариев</div>
 
-    <!-- Модальное окно подтверждения скрытия (обновлённое) -->
+    <!-- Модальное окно подтверждения скрытия -->
     <div v-if="showHideModal" class="hide-modal-overlay" @click.self="closeHideModal">
       <div class="hide-modal-content">
-        <div class="hide-modal-icon">🗑️</div>  <!-- изменено с 🙈 на 🗑️ -->
+        <div class="hide-modal-icon">🗑️</div>
         <h3>Скрыть комментарий</h3>
         <p>Вы уверены, что хотите скрыть этот комментарий?</p>
         <p class="comment-preview">"{{ commentToHide?.content.substring(0, 50) }}..."</p>
         <div class="hide-modal-actions">
           <button class="hide-modal-confirm" @click="hideComment">Да, скрыть</button>
-          <button class="hide-modal-cancel" @click="closeHideModal">Отмена</button>  <!-- улучшена кнопка отмена (см. стили) -->
+          <button class="hide-modal-cancel" @click="closeHideModal">Отмена</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Модальное окно подтверждения окончательного удаления -->
+    <div v-if="showPermanentDeleteModal" class="hide-modal-overlay" @click.self="closePermanentDeleteModal">
+      <div class="hide-modal-content">
+        <div class="hide-modal-icon">🔥</div>
+        <h3>Удалить комментарий навсегда</h3>
+        <p>Вы уверены, что хотите полностью удалить этот комментарий? Это действие необратимо.</p>
+        <p class="comment-preview">"{{ commentToDeletePermanently?.content.substring(0, 50) }}..."</p>
+        <div class="hide-modal-actions">
+          <button class="hide-modal-confirm" @click="permanentDeleteComment">Да, удалить</button>
+          <button class="hide-modal-cancel" @click="closePermanentDeleteModal">Отмена</button>
         </div>
       </div>
     </div>
@@ -103,10 +117,13 @@ const props = defineProps<{
   comments: Comment[];
   canComment: boolean;
   isAuthor: boolean; // true для заказчика
-  canHideComments?: boolean; // true для куратора (supervisor)
+  canHideComments?: boolean; // true для научрука
+  isAdmin?: boolean; // добавлено
+  isCurator?: boolean; // добавлено
   onAddComment?: (content: string) => Promise<void>;
   onMarkAsRead?: (commentId: string) => Promise<void>;
   onHideComment?: (commentId: string) => Promise<void>;
+  onPermanentDelete?: (commentId: string) => Promise<void>; // новый проп
 }>();
 
 const usersStore = useUsersStore();
@@ -117,46 +134,33 @@ const newComment = ref('');
 const authorImageErrors = ref<Record<number, boolean>>({});
 const showHideModal = ref(false);
 const commentToHide = ref<Comment | null>(null);
+const showPermanentDeleteModal = ref(false);
+const commentToDeletePermanently = ref<Comment | null>(null);
 
 const baseUrl = 'http://localhost:8000';
 
-// Логируем полученные комментарии
-watch(() => props.comments, (newVal) => {
-  console.log('📥 CommentsSection received comments:', JSON.parse(JSON.stringify(newVal)));
-}, { deep: true, immediate: true });
-
 // Фильтруем скрытые комментарии: куратор видит все, остальные – только не скрытые
 const filteredComments = computed(() => {
-  const result = props.canHideComments
+  const result = props.isAdmin || props.isCurator
     ? props.comments
     : props.comments.filter(c => !c.hidden);
-  console.log('🔍 filteredComments computed:', JSON.parse(JSON.stringify(result)));
   return result;
 });
 
 // Сортировка по дате (новые сверху)
 const sortedComments = computed(() => {
-  const result = [...filteredComments.value].sort((a, b) =>
+  return [...filteredComments.value].sort((a, b) =>
     new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
   );
-  console.log('📊 sortedComments computed:', JSON.parse(JSON.stringify(result)));
-  return result;
 });
 
 // Проверка, может ли текущий пользователь скрыть данный комментарий
 const canHide = (comment: Comment): boolean => {
-  const result = props.isAuthor || authStore.user?.id === comment.authorId;
-  console.log('🛡️ canHide check', {
-    commentId: comment.id,
-    isAuthor: props.isAuthor,
-    userId: authStore.user?.id,
-    authorId: comment.authorId,
-    result
-  });
-  return result;
+  // Админ и куратор всегда могут скрыть
+  if (props.isAdmin || props.isCurator) return true;
+  return props.isAuthor || authStore.user?.id === comment.authorId;
 };
 
-// Форматирование даты
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr);
   const now = new Date();
@@ -178,7 +182,6 @@ const formatDate = (dateStr: string) => {
   });
 };
 
-// Получение данных автора
 const getAuthorNickname = (id: number): string => {
   const user = usersStore.users.find(u => u.id === id);
   return user ? user.nickname : `ID: ${id}`;
@@ -199,10 +202,8 @@ const handleAuthorImageError = (id: number) => {
   authorImageErrors.value[id] = true;
 };
 
-// Добавление комментария
 const saveComment = async () => {
   if (!newComment.value.trim() || !props.onAddComment) return;
-  console.log('💾 Saving comment:', newComment.value);
   await props.onAddComment(newComment.value);
   newComment.value = '';
   showAddComment.value = false;
@@ -213,53 +214,78 @@ const cancelAddComment = () => {
   showAddComment.value = false;
 };
 
-// Отметка как прочитанное
 const markAsRead = async (commentId: string) => {
   if (props.onMarkAsRead) {
-    console.log('📖 Marking comment as read:', commentId);
     await props.onMarkAsRead(commentId);
   }
 };
 
-// Скрытие комментария
 const confirmHideComment = (comment: Comment) => {
-  console.log('🔔 confirmHideComment called for comment:', comment.id);
   commentToHide.value = comment;
   showHideModal.value = true;
 };
 
 const closeHideModal = () => {
-  console.log('❌ Closing hide modal');
   showHideModal.value = false;
   commentToHide.value = null;
 };
 
 const hideComment = async () => {
-  console.log('🚀 hideComment called with', commentToHide.value?.id);
-  if (!commentToHide.value || !props.onHideComment) {
-    console.log('⚠️ missing data or callback', { hasComment: !!commentToHide.value, hasCallback: !!props.onHideComment });
-    return;
-  }
+  if (!commentToHide.value || !props.onHideComment) return;
   try {
     await props.onHideComment(commentToHide.value.id);
-    console.log('✅ hideComment completed successfully');
   } catch (error) {
-    console.error('❌ hideComment error', error);
+    console.error('hideComment error', error);
     alert('Не удалось скрыть комментарий');
   } finally {
     closeHideModal();
   }
 };
 
-// Автопрокрутка (опционально)
-const scrollToBottom = () => {
-  const container = document.querySelector('.comments-list');
-  if (container) {
-    container.scrollTop = container.scrollHeight;
+const confirmPermanentDelete = (comment: Comment) => {
+  commentToDeletePermanently.value = comment;
+  showPermanentDeleteModal.value = true;
+};
+
+const closePermanentDeleteModal = () => {
+  showPermanentDeleteModal.value = false;
+  commentToDeletePermanently.value = null;
+};
+
+const permanentDeleteComment = async () => {
+  if (!commentToDeletePermanently.value || !props.onPermanentDelete) return;
+  try {
+    await props.onPermanentDelete(commentToDeletePermanently.value.id);
+  } catch (error) {
+    console.error('permanentDelete error', error);
+    alert('Не удалось удалить комментарий');
+  } finally {
+    closePermanentDeleteModal();
   }
 };
 </script>
 
+<style scoped>
+/* Стили остаются без изменений, добавляем новый класс для кнопки удаления */
+.permanent-delete-btn {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  transition: all 0.2s;
+  opacity: 0.6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--danger-color);
+}
+.permanent-delete-btn:hover {
+  opacity: 1;
+  background: rgba(244, 67, 54, 0.2);
+}
+/* Остальные стили из исходного файла CommentsSection.vue */
+</style>
 <style scoped>
 .comments-section {
   margin-top: 30px;

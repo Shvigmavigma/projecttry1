@@ -7,7 +7,7 @@ import MainMenu from '../views/MainMenu.vue'
 import AllUsers from '../views/AllUsers.vue'
 import UserDetails from '../views/UserDetails.vue'
 import AllProjects from '../views/AllProjects.vue'
-import MyProjects from '../views/MyProjects.vue'  // Добавить импорт
+import MyProjects from '../views/MyProjects.vue'
 import ProjectDetails from '../views/ProjectDetails.vue'
 import ProjectEdit from '../views/ProjectEdit.vue'
 import TaskDetails from '../views/TaskDetails.vue'
@@ -15,98 +15,91 @@ import TaskEdit from '../views/TaskEdit.vue'
 import Profile from '../views/Profile.vue'
 import ProfileEdit from '../views/ProfileEdit.vue'
 import UserProjects from '../views/UserProjects.vue'
-import InviteAccept from '@/views/InviteAccept.vue';
+import InviteAccept from '@/views/InviteAccept.vue'
+
+// Импорт админских страниц (создадим их позже)
+import AdminPanel from '../views/AdminPanel.vue'
+import AdminUsers from '../views/AdminUsers.vue'
+import AdminUserEdit from '../views/AdminUserEdit.vue'
+import AdminProjects from '../views/AdminProjects.vue'
+import AdminProjectEdit from '../views/AdminProjectEdit.vue'
 
 const routes: Array<RouteRecordRaw> = [
+  // ... существующие маршруты
+  { path: '/', redirect: '/login' },
+  { path: '/login', name: 'Login', component: Login },
+  { path: '/register', name: 'Register', component: Register },
+  { path: '/verify-email', name: 'VerifyEmail', component: VerifyEmail },
+  { path: '/main', name: 'MainMenu', component: MainMenu },
+  { path: '/users', name: 'AllUsers', component: AllUsers },
+  { path: '/user/:id', name: 'UserDetails', component: UserDetails },
+  { path: '/projects', name: 'AllProjects', component: AllProjects },
+  { path: '/my-projects', name: 'MyProjects', component: MyProjects },
+  { path: '/project/:id', name: 'ProjectDetails', component: ProjectDetails },
+  { path: '/project/edit/:id', name: 'ProjectEdit', component: ProjectEdit },
+  { path: '/project/:projectId/task/:taskIndex', name: 'TaskDetails', component: TaskDetails },
+  { path: '/project/:projectId/task/:taskIndex/edit', name: 'TaskEdit', component: TaskEdit },
+  { path: '/profile', name: 'Profile', component: Profile },
+  { path: '/profile/edit', name: 'ProfileEdit', component: ProfileEdit },
+  { path: '/user/:id/projects', name: 'UserProjects', component: UserProjects },
+  { path: '/invite/:token', name: 'InviteAccept', component: InviteAccept },
+  
+  // Админские маршруты
   {
-    path: '/',
-    redirect: '/login'
+    path: '/admin',
+    name: 'AdminPanel',
+    component: AdminPanel,
+    meta: { requiresAdmin: true }
   },
   {
-    path: '/login',
-    name: 'Login',
-    component: Login
+    path: '/admin/users',
+    name: 'AdminUsers',
+    component: AdminUsers,
+    meta: { requiresAdmin: true }
   },
   {
-    path: '/register',
-    name: 'Register',
-    component: Register
+    path: '/admin/users/:id/edit',
+    name: 'AdminUserEdit',
+    component: AdminUserEdit,
+    meta: { requiresAdmin: true }
   },
   {
-    path: '/verify-email',
-    name: 'VerifyEmail',
-    component: VerifyEmail
+    path: '/admin/projects',
+    name: 'AdminProjects',
+    component: AdminProjects,
+    meta: { requiresAdmin: true }
   },
   {
-    path: '/main',
-    name: 'MainMenu',
-    component: MainMenu
+    path: '/admin/projects/:id/edit',
+    name: 'AdminProjectEdit',
+    component: AdminProjectEdit,
+    meta: { requiresAdmin: true }
   },
-  {
-    path: '/users',
-    name: 'AllUsers',
-    component: AllUsers
-  },
-  {
-    path: '/user/:id',
-    name: 'UserDetails',
-    component: UserDetails
-  },
-  {
-    path: '/projects',
-    name: 'AllProjects',
-    component: AllProjects
-  },
-  {
-    path: '/my-projects',           // Добавить этот маршрут
-    name: 'MyProjects',
-    component: MyProjects
-  },
-  {
-    path: '/project/:id',
-    name: 'ProjectDetails',
-    component: ProjectDetails
-  },
-  {
-    path: '/project/edit/:id',
-    name: 'ProjectEdit',
-    component: ProjectEdit
-  },
-  {
-    path: '/project/:projectId/task/:taskIndex',
-    name: 'TaskDetails',
-    component: TaskDetails
-  },
-  {
-    path: '/project/:projectId/task/:taskIndex/edit',
-    name: 'TaskEdit',
-    component: TaskEdit
-  },
-  {
-    path: '/profile',
-    name: 'Profile',
-    component: Profile
-  },
-  {
-    path: '/profile/edit',
-    name: 'ProfileEdit',
-    component: ProfileEdit
-  },
-  {
-    path: '/user/:id/projects',
-    name: 'UserProjects',
-    component: UserProjects
-  },
-  {
-  path: '/invite/:token',
-  name: 'InviteAccept',
-  component: InviteAccept
-  }
 ]
 
 const router = createRouter({
   history: createWebHistory(),
   routes
+})
+
+// Guard для проверки прав администратора
+router.beforeEach(async (to, from, next) => {
+  if (to.meta.requiresAdmin) {
+    // Импортируем store здесь, чтобы избежать циклической зависимости
+    const { useAuthStore } = await import('@/stores/auth')
+    const authStore = useAuthStore()
+    // Убедимся, что пользователь загружен
+    if (!authStore.isAuthenticated) {
+      await authStore.checkAuth()
+    }
+    if (!authStore.user?.is_admin) {
+      next('/main')
+    } else {
+      next()
+    }
+  } else {
+    next()
+  }
 })
 
 export default router

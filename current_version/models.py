@@ -23,6 +23,7 @@ class User(Base):
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     is_teacher = Column(Boolean, default=False, nullable=False) 
     teacher_info = Column(JSON, nullable=True)
+    is_admin = Column(Boolean, default=False, nullable=False)
 
 class Project(Base):
     __tablename__ = "projects"

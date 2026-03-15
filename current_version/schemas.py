@@ -129,6 +129,7 @@ class UserResponse(BaseModel):
     
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+    is_admin: bool = False
     
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 

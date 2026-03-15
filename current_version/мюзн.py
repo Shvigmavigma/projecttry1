@@ -1,21 +1,9 @@
-# migrate_add_join_requests.py
-"""
-Скрипт для добавления поля join_requests в таблицу projects
-Запуск: python migrate_add_join_requests.py
-"""
-
 import sqlite3
 import os
-from pathlib import Path
 
-# Путь к базе данных (относительно корня проекта)
 DB_PATH = "my_database.db"
 
-def add_join_requests_column():
-    """
-    Добавляет колонку join_requests типа TEXT (JSON) в таблицу projects,
-    если она ещё не существует.
-    """
+def add_is_admin_column():
     if not os.path.exists(DB_PATH):
         print(f"Ошибка: файл базы данных {DB_PATH} не найден.")
         return
@@ -24,21 +12,20 @@ def add_join_requests_column():
     cursor = conn.cursor()
 
     try:
-        # Проверяем существование колонки
-        cursor.execute("PRAGMA table_info(projects)")
+        cursor.execute("PRAGMA table_info(users)")
         columns = [col[1] for col in cursor.fetchall()]
 
-        if "join_requests" not in columns:
-            print("Добавление колонки join_requests в таблицу projects...")
-            cursor.execute("ALTER TABLE projects ADD COLUMN join_requests TEXT DEFAULT '[]'")
+        if "is_admin" not in columns:
+            print("Добавление колонки is_admin в таблицу users...")
+            cursor.execute("ALTER TABLE users ADD COLUMN is_admin BOOLEAN DEFAULT 0")
             conn.commit()
-            print("✅ Колонка успешно добавлена.")
+            print("✅ Колонка is_admin успешно добавлена.")
         else:
-            print("ℹ️ Колонка join_requests уже существует.")
+            print("ℹ️ Колонка is_admin уже существует.")
     except sqlite3.Error as e:
         print(f"❌ Ошибка SQLite: {e}")
     finally:
         conn.close()
 
 if __name__ == "__main__":
-    add_join_requests_column()
+    add_is_admin_column()

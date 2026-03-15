@@ -1,35 +1,28 @@
 <template>
   <div class="main-menu">
-    <!-- Шапка с центрированным приветствием и кнопками справа -->
     <header class="menu-header">
-      <div class="header-left"></div> <!-- пустой левый блок для центрирования -->
+      <div class="header-left"></div>
       <h1 class="welcome-message">
         Добро пожаловать, <span class="username">{{ authStore.user?.nickname }}</span>!
       </h1>
       <div class="header-actions">
         <ThemeToggle />
-        <button class="profile-button" @click="goTo('profile')">
-          Личный кабинет
-        </button>
+        <button class="profile-button" @click="goTo('profile')">Личный кабинет</button>
       </div>
     </header>
 
-    <!-- Основные кнопки меню в виде списка слева -->
     <div class="menu-container">
       <nav class="menu-list">
-        <button class="menu-item" @click="goTo('my-projects')">
-          Ваши проекты
-        </button>
-        <button class="menu-item" @click="goTo('users')">
-          Список пользователей
-        </button>
-        <button class="menu-item" @click="goTo('projects')">
-          Все проекты
+        <button class="menu-item" @click="goTo('my-projects')">Ваши проекты</button>
+        <button class="menu-item" @click="goTo('users')">Список пользователей</button>
+        <button class="menu-item" @click="goTo('projects')">Все проекты</button>
+        <!-- Кнопка админ-панели, видимая только админу -->
+        <button v-if="authStore.user?.is_admin" class="menu-item admin-button" @click="goTo('admin')">
+          ⚙️ Админ панель
         </button>
       </nav>
     </div>
 
-    <!-- Кнопка выхода -->
     <button class="logout-button" @click="logout">Выйти</button>
   </div>
 </template>
@@ -51,6 +44,17 @@ const logout = () => {
   router.push('/login');
 };
 </script>
+
+<style scoped>
+/* предыдущие стили + для admin-button */
+.admin-button {
+  background: var(--danger-color) !important; /* или другой цвет для отличия */
+  color: white;
+}
+.admin-button:hover {
+  background: var(--danger-hover) !important;
+}
+</style>
 
 <style scoped>
 .main-menu {

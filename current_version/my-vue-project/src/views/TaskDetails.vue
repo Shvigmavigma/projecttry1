@@ -12,7 +12,7 @@
       <h1>Детали задачи</h1>
       <div class="header-actions">
         <ThemeToggle />
-        <!-- Кнопка редактирования для заказчика, исполнителя и куратора -->
+        <!-- Кнопка редактирования для заказчика, исполнителя, куратора и администратора -->
         <router-link v-if="canEditTask" :to="`/project/${projectId}/task/${taskIndex}/edit`">
           <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
@@ -52,7 +52,7 @@
       <section class="task-section comments-main-section">
         <div class="section-header">
           <h3>Комментарии к задаче</h3>
-          <button v-if="isProjectParticipant" class="comment-toggle-btn" @click="showTaskComments = !showTaskComments">
+          <button v-if="hasFullAccess" class="comment-toggle-btn" @click="showTaskComments = !showTaskComments">
             <span class="btn-content">
               <span class="comment-icon">💬</span>
               {{ showTaskComments ? 'Скрыть' : 'Показать' }}
@@ -64,7 +64,7 @@
         <CommentsSection
           v-if="showTaskComments"
           :comments="taskComments"
-          :can-comment="isProjectParticipant"
+          :can-comment="hasFullAccess"
           :is-author="canEditTask"
           :can-hide-comments="canHideComments"
           :on-add-comment="addTaskComment"
@@ -135,9 +135,8 @@
       </div>
 
       <!-- Кнопки действий -->
-      <section class="action-buttons" v-if="isProjectParticipant">
-        <!-- Задача не выполнена – показываем кнопку завершения для всех участников,
-             но если не редактор, кнопка не активна и при клике покажет уведомление -->
+      <section class="action-buttons" v-if="hasFullAccess">
+        <!-- Задача не выполнена – показываем кнопку завершения для всех, у кого есть доступ -->
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask"
                   :disabled="actionInProgress || totalProgress < 100 || !canEditTask"
@@ -258,18 +257,31 @@ const userRole = computed<ProjectRole | null>(() => {
   return participant?.role || null;
 });
 
-// Является ли пользователь участником проекта
-const isProjectParticipant = computed(() => !!userRole.value);
+// Является ли пользователь куратором (глобально)
+const isCurator = computed(() => {
+  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
+});
 
-// Может ли редактировать задачу (заказчик, исполнитель или куратор)
+// Имеет ли пользователь полный доступ (участник, админ или куратор)
+const hasFullAccess = computed(() => {
+  return !!userRole.value || authStore.user?.is_admin || isCurator.value;
+});
+
+// Может ли редактировать задачу (заказчик, исполнитель, куратор, админ)
 const canEditTask = computed(() => 
   userRole.value === 'customer' || 
   userRole.value === 'executor' || 
-  userRole.value === 'curator'
+  userRole.value === 'curator' ||
+  authStore.user?.is_admin || 
+  isCurator.value
 );
 
-// Может ли скрывать комментарии (научный руководитель)
-const canHideComments = computed(() => userRole.value === 'supervisor');
+// Может ли скрывать комментарии (научный руководитель, админ, куратор)
+const canHideComments = computed(() => 
+  userRole.value === 'supervisor' || 
+  authStore.user?.is_admin || 
+  isCurator.value
+);
 
 const taskComments = computed(() => task.value?.comments || []);
 
@@ -277,10 +289,8 @@ const taskComments = computed(() => task.value?.comments || []);
 const unreadTaskCommentsCount = computed(() => {
   const comments = task.value?.comments || [];
   if (canHideComments.value) {
-    // куратор видит все, считаем все непрочитанные
     return comments.filter(c => !c.isRead).length;
   }
-  // обычные участники не видят скрытые комментарии
   return comments.filter(c => !c.hidden && !c.isRead).length;
 });
 
@@ -499,8 +509,8 @@ const updateTaskStatus = async (newStatus: string) => {
 
 // --- Функции для работы с комментариями ---
 const addTaskComment = async (content: string) => {
-  if (!isProjectParticipant.value) { 
-    showNotification('Только участники могут комментировать', 'info'); 
+  if (!hasFullAccess.value) { 
+    showNotification('Только участники, администраторы и кураторы могут комментировать', 'info'); 
     return; 
   }
   if (!project.value || !task.value || !authStore.user) return;
@@ -526,7 +536,7 @@ const addTaskComment = async (content: string) => {
 };
 
 const markTaskCommentAsRead = async (commentId: string) => {
-  if (!task.value || !isProjectParticipant.value) return;
+  if (!task.value || !hasFullAccess.value) return;
   try {
     await axios.put(`${baseUrl}/projects/${projectId}/tasks/${taskIndex}/comments/${commentId}/read`);
     if (task.value.comments) {

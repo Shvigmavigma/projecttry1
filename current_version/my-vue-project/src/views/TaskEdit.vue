@@ -17,6 +17,12 @@
       </div>
     </header>
 
+    <!-- Информационная подсказка для админа/куратора -->
+    <div v-if="isAdminOrCurator" class="admin-hint">
+      <span class="hint-icon">⚙️</span>
+      <span class="hint-text">Вы имеете полные права как администратор или куратор.</span>
+    </div>
+
     <div v-if="loading" class="loading">Загрузка...</div>
     <div v-else-if="error" class="error">{{ error }}</div>
     <div v-else-if="!hasEditPermission" class="error">У вас нет прав для редактирования этой задачи</div>
@@ -192,11 +198,10 @@ const usersStore = useUsersStore();
 
 const projectId = Number(route.params.projectId);
 const taskIndex = Number(route.params.taskIndex);
-const isNew = route.path.includes('/new'); // если путь /project/:projectId/task/new, но у нас нет такого, оставим для совместимости
+const isNew = route.path.includes('/new');
 const loading = ref(true);
 const error = ref('');
 const saving = ref(false);
-const hasEditPermission = ref(false);
 
 const project = ref<Project | null>(null);
 const originalTask = ref<Task | null>(null);
@@ -212,9 +217,7 @@ const form = reactive({
 });
 
 // Подзадачи
-interface EditableSubTask extends SubTask {
-  // уже все поля есть
-}
+interface EditableSubTask extends SubTask {}
 const subtasks = ref<EditableSubTask[]>([]);
 
 // Ошибки дат
@@ -249,6 +252,26 @@ function closeNotification() {
     notificationTimeout = null;
   }
 }
+
+// Является ли пользователь куратором (глобально)
+const isCurator = computed(() => {
+  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
+});
+
+// Является ли пользователь администратором или куратором
+const isAdminOrCurator = computed(() => authStore.user?.is_admin || isCurator.value);
+
+// Право на редактирование задачи (заказчик, исполнитель, куратор в проекте, либо глобальный админ/куратор)
+const hasEditPermission = computed(() => {
+  if (!project.value) return false;
+  // Глобальные права
+  if (authStore.user?.is_admin || isCurator.value) return true;
+
+  // Права в рамках проекта
+  const participant = project.value.participants?.find(p => p.user_id === authStore.userId);
+  const role = participant?.role;
+  return role === 'customer' || role === 'executor' || role === 'curator';
+});
 
 // Форматирование даты (маска)
 function formatDateInput(value: string): string {
@@ -319,7 +342,6 @@ onMounted(async () => {
     return;
   }
 
-  // Загружаем пользователей для авторов (не обязательно)
   if (usersStore.users.length === 0) {
     await usersStore.fetchAllUsers();
   }
@@ -331,15 +353,8 @@ onMounted(async () => {
       return;
     }
 
-    // Проверка прав: заказчик, исполнитель, куратор
-    const participant = project.value.participants?.find(p => p.user_id === authStore.userId);
-    const role = participant?.role;
-    hasEditPermission.value = role === 'customer' || role === 'executor' || role === 'curator';
-
-    if (!hasEditPermission.value) {
-      error.value = 'У вас нет прав для редактирования задач в этом проекте';
-      return;
-    }
+    // Проверка прав (hasEditPermission computed обновится автоматически)
+    // Если нет прав, покажем сообщение, но загрузку продолжим для отображения ошибки
 
     if (taskIndex < 0 || taskIndex >= (project.value.tasks?.length || 0)) {
       error.value = 'Задача не найдена';
@@ -437,7 +452,7 @@ async function handleSubmit() {
     timelinend: form.timelinend || undefined,
     status: form.status,
     subtasks: subtasks.value,
-    progress: totalSubtasksPercent.value, // или можно оставить как есть, но лучше пересчитать
+    progress: totalSubtasksPercent.value,
   };
 
   // Копируем массив задач
@@ -520,6 +535,25 @@ const goHome = () => router.push('/main');
 .light-theme .home-button:hover,
 .light-theme .back-button:hover {
   background: rgba(0, 0, 0, 0.05);
+}
+
+/* Подсказка для админа/куратора */
+.admin-hint {
+  max-width: 800px;
+  margin: 0 auto 15px;
+  padding: 10px 16px;
+  background-color: rgba(255, 193, 7, 0.1);
+  border-left: 4px solid #ffc107;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.hint-icon {
+  font-size: 1.2rem;
 }
 
 .edit-card {
