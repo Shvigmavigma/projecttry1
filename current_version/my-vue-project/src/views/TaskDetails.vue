@@ -12,7 +12,7 @@
       <h1>Детали задачи</h1>
       <div class="header-actions">
         <ThemeToggle />
-        <!-- Кнопка редактирования для заказчика, исполнителя, куратора и администратора -->
+        <!-- Кнопка редактирования для заказчика, исполнителя, куратора, админа -->
         <router-link v-if="canEditTask" :to="`/project/${projectId}/task/${taskIndex}/edit`">
           <button class="icon-button edit-task-button" title="Редактировать задачу">✎</button>
         </router-link>
@@ -67,9 +67,12 @@
           :can-comment="hasFullAccess"
           :is-author="canEditTask"
           :can-hide-comments="canHideComments"
+          :is-admin="isAdmin"
+          :is-curator="isCurator"
           :on-add-comment="addTaskComment"
           :on-mark-as-read="markTaskCommentAsRead"
           :on-hide-comment="hideTaskComment"
+          :on-permanent-delete="permanentDeleteComment"
         />
       </section>
 
@@ -136,7 +139,8 @@
 
       <!-- Кнопки действий -->
       <section class="action-buttons" v-if="hasFullAccess">
-        <!-- Задача не выполнена – показываем кнопку завершения для всех, у кого есть доступ -->
+        <!-- Задача не выполнена – показываем кнопку завершения для всех участников,
+             но если не редактор, кнопка не активна и при клике покажет уведомление -->
         <div v-if="task.status !== 'выполнена'">
           <button class="complete-button" @click="completeTask"
                   :disabled="actionInProgress || totalProgress < 100 || !canEditTask"
@@ -222,24 +226,13 @@ const showConfirmDialog = ref(false);
 const extraProgress = computed(() => sliderValue.value);
 
 // Уведомления
-const notification = ref({
-  show: false,
-  message: '',
-  type: 'error' as 'error' | 'info' | 'success'
-});
-
+const notification = ref({ show: false, message: '', type: 'error' as 'error' | 'info' | 'success' });
 let notificationTimeout: number | null = null;
 
 function showNotification(message: string, type: 'error' | 'info' | 'success' = 'error', duration = 5000) {
-  if (notificationTimeout) {
-    clearTimeout(notificationTimeout);
-    notificationTimeout = null;
-  }
+  if (notificationTimeout) clearTimeout(notificationTimeout);
   notification.value = { show: true, message, type };
-  notificationTimeout = window.setTimeout(() => {
-    notification.value.show = false;
-    notificationTimeout = null;
-  }, duration);
+  notificationTimeout = window.setTimeout(() => { notification.value.show = false; }, duration);
 }
 
 function closeNotification() {
@@ -257,29 +250,26 @@ const userRole = computed<ProjectRole | null>(() => {
   return participant?.role || null;
 });
 
-// Является ли пользователь куратором (глобально)
-const isCurator = computed(() => {
-  return authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true;
-});
+// Глобальные роли
+const isAdmin = computed(() => authStore.user?.is_admin === true);
+const isCurator = computed(() => authStore.user?.is_teacher && authStore.user?.teacher_info?.curator === true);
 
-// Имеет ли пользователь полный доступ (участник, админ или куратор)
-const hasFullAccess = computed(() => {
-  return !!userRole.value || authStore.user?.is_admin || isCurator.value;
-});
+// Полный доступ (участник, админ или куратор)
+const hasFullAccess = computed(() => !!userRole.value || isAdmin.value || isCurator.value);
 
 // Может ли редактировать задачу (заказчик, исполнитель, куратор, админ)
 const canEditTask = computed(() => 
   userRole.value === 'customer' || 
   userRole.value === 'executor' || 
   userRole.value === 'curator' ||
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
 
 // Может ли скрывать комментарии (научный руководитель, админ, куратор)
 const canHideComments = computed(() => 
   userRole.value === 'supervisor' || 
-  authStore.user?.is_admin || 
+  isAdmin.value || 
   isCurator.value
 );
 
@@ -562,6 +552,24 @@ const hideTaskComment = async (commentId: string) => {
   } catch (error) {
     console.error('Failed to hide comment:', error);
     showNotification('Ошибка при скрытии комментария', 'error');
+  }
+};
+
+// Новый метод для окончательного удаления комментария (только админ/куратор)
+const permanentDeleteComment = async (commentId: string) => {
+  if (!project.value) return;
+  try {
+    await axios.delete(`${baseUrl}/admin/comments/${commentId}`);
+    showNotification('Комментарий удалён навсегда', 'success');
+    // Перезагружаем задачу
+    const updatedProject = await projectsStore.fetchProjectById(projectId);
+    project.value = updatedProject;
+    if (updatedProject && updatedProject.tasks && updatedProject.tasks[taskIndex]) {
+      task.value = updatedProject.tasks[taskIndex];
+    }
+  } catch (error) {
+    console.error('Failed to delete comment permanently', error);
+    showNotification('Ошибка при удалении комментария', 'error');
   }
 };
 

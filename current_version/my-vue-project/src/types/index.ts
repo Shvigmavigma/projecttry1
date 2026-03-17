@@ -59,6 +59,7 @@ export interface Comment {
   createdAt: string;
   isRead: boolean;
   hidden?: boolean;
+  authorRole?: string;
 }
 
 export interface SuggestionComment {

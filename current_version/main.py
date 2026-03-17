@@ -100,6 +100,26 @@ def is_curator(user: User) -> bool:
     """Проверяет, является ли пользователь куратором (глобальная роль)."""
     return user.is_teacher and user.teacher_info and user.teacher_info.get("curator", False)
 
+# Новая функция для получения роли автора комментария
+def get_author_role(user: User, project: Project) -> str:
+    """Возвращает роль пользователя для отображения в комментарии."""
+    if user.is_admin:
+        return "Администратор"
+    if is_curator(user):
+        return "Куратор"
+    for p in (project.participants or []):
+        if p.get("user_id") == user.id:
+            role = p.get("role")
+            role_names = {
+                "customer": "Заказчик",
+                "supervisor": "Научный руководитель",
+                "expert": "Эксперт",
+                "executor": "Исполнитель",
+                "curator": "Куратор (в проекте)"
+            }
+            return role_names.get(role, role)
+    return "Участник"
+
 # ==================== TOKEN ENDPOINT ====================
 @app.post("/token", response_model=TokenResponse, tags=["Auth"])
 async def token_login(
@@ -906,13 +926,15 @@ async def add_comment(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    # Админ и куратор могут комментировать любой проект
     if not (current_user.is_admin or is_curator(current_user) or any(p.get("user_id") == current_user.id for p in (project.participants or []))):
         raise HTTPException(status_code=403, detail="Only project participants, curator or admin can comment")
     if project.comments is None:
         project.comments = []
     comment.authorId = current_user.id
+    # Добавляем роль автора
+    comment.authorRole = get_author_role(current_user, project)
     project.comments.append(comment.model_dump(mode='json'))
+    flag_modified(project, "comments")
     try:
         db.commit()
         db.refresh(project)
@@ -964,6 +986,7 @@ async def add_task_comment(
     if task.get("comments") is None:
         task["comments"] = []
     comment.authorId = current_user.id
+    comment.authorRole = get_author_role(current_user, project)
     task["comments"].append(comment.model_dump(mode='json'))
     flag_modified(project, "tasks")
     try:
@@ -1087,10 +1110,9 @@ async def hide_comment(
     # Проверяем права: научный руководитель, админ или куратор
     if not (current_user.is_admin or is_curator(current_user)):
         role = get_participant_role(project, current_user.id)
-        if role != ProjectRole.SUPERVISOR.value or role != ProjectRole.EXECUTOR.value:
+        if role != ProjectRole.SUPERVISOR.value:
             raise HTTPException(status_code=403, detail="Only supervisor, curator or admin can hide comments")
 
-    # Ищем комментарий
     comment = next((c for c in (project.comments or []) if c.get("id") == comment_id), None)
     if not comment:
         raise HTTPException(status_code=404, detail="Comment not found")

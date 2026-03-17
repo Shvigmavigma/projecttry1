@@ -14,6 +14,7 @@ class Comment(BaseModel):
     id: str
     authorId: int
     content: str
+    authorRole: Optional[str] = None   # <-- добавлено
     createdAt: str
     isRead: bool
     hidden: bool = False                    # <-- новое поле

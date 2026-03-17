@@ -762,6 +762,11 @@ async function deleteDriveLink() {
 // --- Работа с комментариями проекта ---
 const addProjectComment = async (content: string) => {
   if (!project.value || !authStore.user) return;
+  // Проверка прав уже выполнена через canComment в шаблоне, но для надёжности:
+  if (!hasFullAccess.value) {
+    showNotification('У вас нет прав для комментирования', 'info');
+    return;
+  }
   const newComment: Comment = {
     id: uuidv4(),
     authorId: authStore.user.id,
@@ -781,7 +786,7 @@ const addProjectComment = async (content: string) => {
 };
 
 const markProjectCommentAsRead = async (commentId: string) => {
-  if (!project.value) return;  // убрана проверка userRole
+  if (!project.value) return;
   try {
     await axios.put(`${baseUrl}/projects/${project.value.id}/comments/${commentId}/read`);
     if (project.value.comments) {
@@ -1047,7 +1052,6 @@ function showNotification(message: string, type: 'error' | 'info' | 'success' = 
 </script>
 
 <style scoped>
-/* Стили из исходного файла (оставлены без изменений) */
 .already-responded {
   text-align: center;
   padding: 12px 24px;

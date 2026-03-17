@@ -39,7 +39,10 @@
               />
               <span v-else>{{ getAuthorInitials(comment.authorId) }}</span>
             </div>
-            <span class="author-name">{{ getAuthorNickname(comment.authorId) }}</span>
+            <div class="author-info">
+              <span class="author-name">{{ getAuthorNickname(comment.authorId) }}</span>
+              <span v-if="comment.authorRole" class="author-role">{{ comment.authorRole }}</span>
+            </div>
           </div>
           <div class="comment-meta">
             <span class="comment-date">{{ formatDate(comment.createdAt) }}</span>
@@ -438,10 +441,21 @@ const permanentDeleteComment = async () => {
   object-fit: cover;
 }
 
+.author-info {
+  display: flex;
+  flex-direction: column;
+}
+
 .author-name {
   color: var(--heading-color);
   font-weight: 600;
   font-size: 0.95rem;
+}
+
+.author-role {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  font-style: italic;
 }
 
 .comment-meta {
