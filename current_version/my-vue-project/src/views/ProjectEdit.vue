@@ -144,7 +144,10 @@
         <div class="form-section">
           <div class="tasks-header">
             <h2>Задачи проекта</h2>
-            <button type="button" class="add-task-button" @click="addTask">+ Добавить задачу</button>
+            <div class="task-buttons">
+              <button type="button" class="add-task-button" @click="addTask">+ Добавить задачу</button>
+              <button type="button" class="add-default-tasks-button" @click="addDefaultTasks">📋 Добавить дефолтные задачи</button>
+            </div>
           </div>
 
           <div v-if="tasks.length === 0" class="no-tasks">
@@ -367,6 +370,31 @@ type EditableTask = Task & {
 };
 
 const tasks = ref<EditableTask[]>([]);
+
+// --- Дефолтные задачи (пользователь может отредактировать этот массив) ---
+const defaultTasks = ref<Partial<Task>[]>([
+  {
+    title: 'Исследование',
+    body: 'Провести предварительное исследование',
+    status: 'ожидает',
+    timeline: '01.01.2025',
+    timelinend: '15.01.2025',
+  },
+  {
+    title: 'Прототипирование',
+    body: 'Создать прототип',
+    status: 'ожидает',
+    timeline: '16.01.2025',
+    timelinend: '31.01.2025',
+  },
+  {
+    title: 'Тестирование',
+    body: 'Провести тестирование',
+    status: 'ожидает',
+    timeline: '01.02.2025',
+    timelinend: '15.02.2025',
+  },
+]);
 
 // Роль текущего пользователя в проекте
 const userRole = ref<ProjectRole | null>(null);
@@ -687,6 +715,29 @@ function addTask() {
   });
 }
 
+// Добавление дефолтных задач
+function addDefaultTasks() {
+  defaultTasks.value.forEach(task => {
+    const newTask: EditableTask = {
+      title: task.title || 'Новая задача',
+      body: task.body || '',
+      status: task.status || 'ожидает',
+      timeline: task.timeline || '',
+      timelinend: task.timelinend || '',
+      progress: task.progress,
+      subtasks: task.subtasks,
+      comments: task.comments,
+      assigned_to: task.assigned_to,
+      id: task.id,
+      expanded: false,
+      startError: undefined,
+      endError: undefined,
+    };
+    tasks.value.push(newTask);
+  });
+  showNotification(`Добавлено ${defaultTasks.value.length} дефолтных задач`, 'success');
+}
+
 function saveTask(index: number) {
   const task = tasks.value[index];
   if (!task) return;
@@ -897,7 +948,7 @@ const goBack = () => router.go(-1);
   font-size: 1.2rem;
 }
 
-/* Остальные стили остаются без изменений */
+/* Остальные стили */
 .invite-section {
   display: flex;
   flex-direction: column;
@@ -1186,7 +1237,12 @@ textarea {
   align-items: center;
   margin-bottom: 20px;
 }
-.add-task-button {
+.task-buttons {
+  display: flex;
+  gap: 10px;
+}
+.add-task-button,
+.add-default-tasks-button {
   background: var(--accent-color);
   color: var(--button-text);
   border: none;
@@ -1197,10 +1253,17 @@ textarea {
   cursor: pointer;
   transition: background 0.2s;
 }
-.add-task-button:hover:not(:disabled) {
+.add-default-tasks-button {
+  background: #ff9800;
+}
+.add-default-tasks-button:hover {
+  background: #f57c00;
+}
+.add-task-button:hover {
   background: var(--accent-hover);
 }
-.add-task-button:disabled {
+.add-task-button:disabled,
+.add-default-tasks-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
